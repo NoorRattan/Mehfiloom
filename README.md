@@ -6,45 +6,50 @@ Mehfiloom is a planning assistant for weddings, birthdays, and community events.
 
 ## Current build
 
-Step 1 is in progress. The app now has an event brief, a structured server-side Gemini generation route, application-side output validation, deterministic budget allocation, and an editable planning canvas. The labeled example plan uses synthetic content and makes no AI request.
+The local-first plan core and three event-specific examples are implemented. Wedding, birthday, and community examples have different tasks, suggested lead times, vendor questions, and ideas; they include access checks and leave cultural or tradition-specific preferences to the host. Hosts can optionally divide any event into named sessions, keep expected and confirmed counts separate for each session, assign tasks and costs to one session or the whole event, and forecast per-person costs against only the applicable attendance. Session counts may overlap and are never summed into the unique event count. Committed costs can hold a dated payment history with notes; the paid total is checked against that history, and deposits do not inflate the cost forecast. Older saved plans migrate their existing paid total to a clearly undated legacy payment. The selected event type controls the example/new-plan flow and adds type-specific guidance to live Groq requests. Suggested timing is a starting point, not a deadline or guarantee. The labeled example plans use synthetic content and make no AI request.
 
-The live model flow needs a Gemini API key. Without one, the app keeps the brief and current plan intact and explains how to connect the provider. An API call has not yet been verified with a live credential.
+The live model flow needs a Groq API key. Without one, the app keeps the brief and current plan intact and explains how to connect the provider. The adapter uses Groq's `openai/gpt-oss-120b` model with strict JSON Schema output, then validates the returned proposal again with Zod. The live provider response and full browser journeys for all three event types and the revision flow have not yet been verified.
 
 ## Run locally
 
 Requirements: Node.js 20.9 or later and npm to run the app. The built-in contract test command uses Node.js 22.6 or later for TypeScript type stripping.
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
-Open `http://localhost:3000`. The labeled example works without an API key. To enable live generation at no token cost within Google's available free-tier limits, copy `.env.example` to `.env.local`, then add a key from Google AI Studio:
+Open `http://localhost:3000`. The labeled example works without an API key. To enable live generation while staying within Groq's no-cost Free plan, copy `.env.example` to `.env.local`, then add a key from the [Groq Console](https://console.groq.com/keys):
 
 ```dotenv
-GEMINI_API_KEY=your_private_key
+GROQ_API_KEY=your_private_key
 ```
 
-On PowerShell, copy the file with `Copy-Item .env.example .env.local`. Keep the real key only in `.env.local` or the hosting provider's private environment settings. Never use a `NEXT_PUBLIC_` prefix for it, and never commit it. The prototype pins the model to `gemini-3.8-flash` to keep the free-service choice clear.
+On PowerShell, copy the file with `Copy-Item .env.example .env.local`. Keep the real key only in `.env.local` or the hosting provider's private environment settings. Never use a `NEXT_PUBLIC_` prefix for it, and never commit it. The prototype pins the model to `openai/gpt-oss-120b`; it supports Groq strict JSON Schema output. Keep the account on Groq's Free plan and do not enable the paid Developer plan if you need to avoid token charges. Free-plan limits depend on model/account and may change; inspect the current limits for your account before making live requests.
 
-Google's current Gemini Developer API pricing page lists `gemini-3.8-flash` input and output as free of charge on the Free tier, and says Free-tier content is used to improve Google products. Keep the AI Studio project on its Free tier and do not enable billing if zero-cost use is required. Provider limits depend on the account/project and can change. Live generation sends the event brief to Google; use fictional demo details and do not enter real guest names or sensitive personal information. Check the [current pricing](https://ai.google.dev/gemini-api/docs/pricing) and [rate limits](https://ai.google.dev/gemini-api/docs/rate-limits) before use.
+Live generation sends the event brief and any revision request to Groq. Groq says inference data is not retained by default, but may be temporarily logged for up to 30 days for reliability or abuse monitoring. Use fictional demo details and avoid real guest names or sensitive personal information. Check Groq's [data policy](https://console.groq.com/docs/your-data), [model limits](https://console.groq.com/docs/rate-limits), and [billing information](https://console.groq.com/docs/billing-faqs) before use.
 
-## What the first milestone does
+## What the app currently does
 
 - Captures event type, name, place, optional date, attendance, currency, budget cap, style, and must-haves.
-- Sends a bounded brief to one server-side Gemini request using schema-constrained JSON output.
+- Sends a bounded brief to one server-side Groq request using strict JSON Schema output.
 - Validates the response at runtime and rejects duplicate budget categories.
 - Treats model budget weights as relative priorities. Server-side integer arithmetic allocates the host's cap exactly across the suggested categories; allocations are planning targets, not quotes or verified local prices.
 - Renders the idea, editable concept and tasks, budget picture, vendor due-diligence checklist, personalized ideas, and open questions.
+- Saves up to 12 plans in this browser, including task status, vendor notes, count-only event and session attendance, preferences, session-scoped tasks, cost records, and payment history. Plans can be exported and imported as validated version-3 JSON; version-1 and version-2 local plans and files are upgraded when read. Plans are not synced to another device.
+- For AI plans, drafts requested changes separately and shows a review summary before applying them. Accepting preserves recorded host work and creates a reversible revision; stale candidates are rejected, and restoring is available until a later edit.
+- Tracks fixed/per-guest cost entries, estimate ranges, payments, fees, and reserve separately. Unknown mandatory costs and forecasts that cross or exceed the cap remain visible.
 - Preserves the brief and current draft when the provider is unconfigured or a request fails.
 
-The request route limits the body to 16 KiB, caps model output at 1,800 tokens, allows four generation attempts per client key within 20 minutes per running process, and does not retry a failed provider call. The in-memory limit is best-effort only: it resets with the process, does not coordinate across instances, and depends on trusted proxy headers. Configure hosting-level quotas and rate limits before public deployment.
+The request route limits the body to 16 KiB, caps model completion at 3,000 tokens, allows four generation attempts per client key within 20 minutes per running process, and does not retry a failed provider call. Ten focused handler tests cover body limits, malformed and invalid input, missing provider configuration, safe generic failures, output invariants, and rate-window behavior. The in-memory limit is best-effort only: it resets with the process, does not coordinate across instances, and depends on trusted proxy headers. Configure hosting-level quotas and rate limits before public deployment.
 
-When live generation is enabled, the event brief is sent to Google Gemini. The app does not currently save a plan to a database or browser storage; generated and locally edited plans exist only in the current page session. Avoid entering private or sensitive details.
+
+Dependency audit note: `npm audit` currently reports five high-severity entries in the development-only Next ESLint dependency chain ending at `braces@3.0.3`. The upstream advisory has no patched release listed; the lockfile remains unchanged because npm’s suggested config downgrade crosses from Next 16 to 14. `npm audit --omit=dev` reports zero production vulnerabilities. Recheck the full audit after an upstream patch.
+When live generation is enabled, the event brief and any revision request are sent to Groq. Plans stay in the current browser's local storage; there is no central database or cross-device sync. Avoid entering real guest names or sensitive details.
 
 ## Current limits
 
-Local persistence, import/export, confirmed vendor quotes, regional price sources, date-aware calendar reminders, plan revisions, shared accounts, and a deployed app are not implemented yet. Unknown costs and assumptions should be confirmed by the host. The example is synthetic and is not evidence of market pricing or vendor availability.
+Live provider output, full end-to-end event journeys, confirmed vendor quotes, regional price sources, date-aware calendar reminders and dependency checks, shared accounts, and a deployed app remain unverified or unimplemented. Session-specific attendance and cost math have focused module tests, including a revision that changes one session while preserving another session's count and fixed costs; the broader protected-constraint/infeasibility matrix and direct review/discard/restore browser testing remain open. Unknown costs and assumptions should be confirmed by the host. Examples are synthetic and are not evidence of market pricing or vendor availability. Automated checks pass, but T-001, T-008, T-009, T-010, T-011, T-015, T-016, T-017, T-018, and T-019 remain partial. API handler limits and generic errors have focused tests; deployment/proxy enforcement, real provider failure behavior, keyboard and screen-reader journeys, rendered contrast, and mobile reflow still need verification.
 
 Planning notes and the evidence pack live outside this repository in the sibling `Mehfiloom-project-files` directory. They document the contest parameters and the remaining milestones; they are not application runtime dependencies.
 
@@ -61,6 +66,8 @@ npm start
 ## References
 
 - [Next.js App Router installation](https://nextjs.org/docs/app/getting-started/installation)
-- [Google GenAI JavaScript SDK](https://ai.google.dev/gemini-api/docs/libraries)
-- [Gemini structured output](https://ai.google.dev/gemini-api/docs/structured-output)
-- [Gemini text generation and output limits](https://ai.google.dev/gemini-api/docs/text-generation)
+- [Groq TypeScript SDK](https://github.com/groq/groq-typescript)
+- [Groq structured outputs](https://console.groq.com/docs/structured-outputs)
+- [Groq GPT-OSS 120B model](https://console.groq.com/docs/model/openai/gpt-oss-120b)
+- [Groq rate limits](https://console.groq.com/docs/rate-limits)
+- [Groq data policy](https://console.groq.com/docs/your-data)

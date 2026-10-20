@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./premium.css";
 
 export const metadata: Metadata = {
-  title: "Mehfiloom — Weave your perfect celebration",
+  title: "Mehfiloom — plan a wedding, birthday, or community event",
   description:
-    "A thoughtful planning canvas for weddings, birthdays, and community celebrations.",
+    "A planning assistant that helps you turn a celebration idea into a practical budget, timeline, checklists, and personal touches.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

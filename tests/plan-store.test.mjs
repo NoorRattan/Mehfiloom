@@ -1,15 +1,28 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  LEGACY_WORKSPACE_STORAGE_KEY,
+  OLDER_WORKSPACE_STORAGE_KEY,
+  WORKSPACE_STORAGE_KEY,
+  addCostPayment,
   calculateBudgetHealth,
   createSavedPlan,
+  expectedGuestsForCostItem,
+  forecastCostItem,
   parsePlanDocument,
   parseWorkspaceJson,
   reidentifyPlan,
+  removeCostPayment,
+  savedPlanSchema,
   serializePlanDocument,
   serializeWorkspace,
 } from "../lib/plan-store.ts";
 import { EXAMPLE_BRIEF, EXAMPLE_PROPOSAL } from "../lib/planner.ts";
+import {
+  clearWorkspaceStorage,
+  loadWorkspaceFromStorage,
+  saveWorkspaceToStorage,
+} from "../lib/plan-storage.ts";
 
 const CREATED_AT = "2026-10-20T12:00:00.000Z";
 
@@ -23,7 +36,7 @@ test("versioned workspace save and reload preserves multiple complete plans", ()
   const second = makePlan("plan-two", "Synthetic community gathering");
   const workspace = {
     format: "mehfiloom-workspace",
-    schemaVersion: 1,
+    schemaVersion: 3,
     activePlanId: second.id,
     plans: [first, second],
   };
@@ -31,10 +44,101 @@ test("versioned workspace save and reload preserves multiple complete plans", ()
   const reloaded = parseWorkspaceJson(serializeWorkspace(workspace));
 
   assert.equal(reloaded.plans.length, 2);
+  assert.equal(reloaded.schemaVersion, 3);
   assert.equal(reloaded.activePlanId, second.id);
   assert.equal(reloaded.plans[0].draftBrief.eventName, "Synthetic wedding");
   assert.deepEqual(reloaded.plans[1].vendors, second.vendors);
   assert.deepEqual(reloaded.plans[1].tasks, second.tasks);
+});
+
+test("workspace persistence surfaces denied reads and quota failures", () => {
+  const plan = makePlan();
+  const workspace = {
+    format: "mehfiloom-workspace",
+    schemaVersion: 3,
+    activePlanId: plan.id,
+    plans: [plan],
+  };
+  const values = new Map();
+  const storage = {
+    getItem(key) { return values.get(key) ?? null; },
+    setItem(key, value) { values.set(key, value); },
+    removeItem(key) { values.delete(key); },
+  };
+
+  assert.equal(loadWorkspaceFromStorage(storage), null);
+  saveWorkspaceToStorage(storage, workspace);
+  assert.ok(values.has(WORKSPACE_STORAGE_KEY));
+  assert.deepEqual(loadWorkspaceFromStorage(storage), workspace);
+  clearWorkspaceStorage(storage);
+  assert.equal(loadWorkspaceFromStorage(storage), null);
+  assert.throws(() => loadWorkspaceFromStorage({ getItem() { throw new Error("Storage access denied"); } }), /Storage access denied/);
+  assert.throws(() => saveWorkspaceToStorage({ setItem() { throw new Error("Quota exceeded"); } }, workspace), /Quota exceeded/);
+});
+
+test("legacy v1 browser storage migrates saved totals into dated-payment history safely", () => {
+  const plan = structuredClone(makePlan("legacy-browser-plan"));
+  plan.schemaVersion = 1;
+  plan.budget.items[0] = {
+    ...plan.budget.items[0],
+    amountMinor: 50_000,
+    evidence: "committed",
+    paidMinor: 25_000,
+  };
+  delete plan.budget.items[0].payments;
+  delete plan.sessionAttendance;
+  delete plan.draftBrief.sessions;
+  delete plan.planBrief.sessions;
+  plan.tasks.forEach((task) => delete task.sessionId);
+  plan.budget.items.forEach((item) => delete item.sessionId);
+  const legacyWorkspace = {
+    format: "mehfiloom-workspace",
+    schemaVersion: 1,
+    activePlanId: plan.id,
+    plans: [plan],
+  };
+  const values = new Map([[OLDER_WORKSPACE_STORAGE_KEY, JSON.stringify(legacyWorkspace)]]);
+  const loaded = loadWorkspaceFromStorage({ getItem(key) { return values.get(key) ?? null; } });
+
+  assert.equal(loaded.schemaVersion, 3);
+  assert.deepEqual(loaded.plans[0].planBrief.sessions, []);
+  assert.deepEqual(loaded.plans[0].sessionAttendance, []);
+  assert.ok(loaded.plans[0].tasks.every((task) => task.sessionId === null));
+  assert.deepEqual(loaded.plans[0].budget.items[0].payments, [{
+    id: "legacy-payment-1",
+    amountMinor: 25_000,
+    paidAt: null,
+    note: "Existing total; payment date not recorded.",
+  }]);
+});
+
+test("legacy v2 storage key and plan records migrate without losing payment totals", () => {
+  const plan = structuredClone(makePlan("legacy-v2-plan"));
+  plan.schemaVersion = 2;
+  plan.budget.items[0] = {
+    ...plan.budget.items[0],
+    amountMinor: 60_000,
+    evidence: "committed",
+    paidMinor: 12_500,
+  };
+  delete plan.budget.items[0].payments;
+  const legacyWorkspace = {
+    format: "mehfiloom-workspace",
+    schemaVersion: 2,
+    activePlanId: plan.id,
+    plans: [plan],
+  };
+  const values = new Map([[LEGACY_WORKSPACE_STORAGE_KEY, JSON.stringify(legacyWorkspace)]]);
+  const loaded = loadWorkspaceFromStorage({ getItem(key) { return values.get(key) ?? null; } });
+
+  assert.equal(loaded.schemaVersion, 3);
+  assert.equal(loaded.plans[0].budget.items[0].paidMinor, 12_500);
+  assert.deepEqual(loaded.plans[0].budget.items[0].payments, [{
+    id: "legacy-payment-1",
+    amountMinor: 12_500,
+    paidAt: null,
+    note: "Existing total; payment date not recorded.",
+  }]);
 });
 
 test("plan JSON export/import round-trips and re-identification preserves internal links", () => {
@@ -48,6 +152,15 @@ test("plan JSON export/import round-trips and re-identification preserves intern
   assert.ok(duplicate.budget.items.every((item) => !item.vendorId || vendorIds.has(item.vendorId)));
   assert.ok(duplicate.tasks.every((task) => task.dependencyIds.every((id) => duplicate.tasks.some((other) => other.id === id))));
   assert.equal(duplicate.createdAt, "2026-10-21T12:00:00.000Z");
+  assert.ok(duplicate.budget.items.every((item) => item.payments.every((payment) => payment.id.startsWith(`${duplicate.id.slice(0, 64)}:cost:`))));
+});
+
+test("a saved plan rejects a budget currency that differs from its event currency", () => {
+  const plan = makePlan();
+  const mismatched = { ...plan, budget: { ...plan.budget, currency: "USD" } };
+
+  assert.equal(savedPlanSchema.safeParse(mismatched).success, false);
+  assert.throws(() => serializePlanDocument(mismatched));
 });
 
 test("older fixed-cost plan files default to fixed pricing without a range", () => {
@@ -59,6 +172,75 @@ test("older fixed-cost plan files default to fixed pricing without a range", () 
 
   const upgraded = parsePlanDocument(JSON.stringify(document));
   assert.ok(upgraded.budget.items.every((item) => item.pricingModel === "fixed" && item.amountMaxMinor === null));
+});
+
+test("version-one plans gain empty session fields without losing existing task or cost data", () => {
+  const document = JSON.parse(serializePlanDocument(makePlan()));
+  document.schemaVersion = 1;
+  document.plan.schemaVersion = 1;
+  delete document.plan.draftBrief.sessions;
+  delete document.plan.planBrief.sessions;
+  delete document.plan.sessionAttendance;
+  document.plan.tasks.forEach((task) => delete task.sessionId);
+  document.plan.budget.items.forEach((item) => delete item.sessionId);
+
+  const upgraded = parsePlanDocument(JSON.stringify(document));
+  assert.deepEqual(upgraded.planBrief.sessions, []);
+  assert.deepEqual(upgraded.sessionAttendance, []);
+  assert.ok(upgraded.tasks.every((task) => task.sessionId === null));
+  assert.ok(upgraded.budget.items.every((item) => item.sessionId === null));
+});
+
+test("session-scoped per-guest forecasts use only that session; fixed and shared costs remain singular", () => {
+  const sessions = [
+    { id: "session-welcome", name: "Welcome gathering", date: "2027-02-13", guestCount: 80 },
+    { id: "session-main", name: "Main celebration", date: "2027-02-14", guestCount: 120 },
+  ];
+  const brief = { ...EXAMPLE_BRIEF, guestCount: 150, sessions };
+  const seed = createSavedPlan(brief, brief, EXAMPLE_PROPOSAL, "session-scope-plan", CREATED_AT);
+  const baseCost = seed.budget.items[0];
+  const costs = [
+    { ...baseCost, id: "welcome-food", vendorId: null, sessionId: sessions[0].id, label: "Welcome meal", category: "food", amountMinor: 100, pricingModel: "per_guest", evidence: "estimate" },
+    { ...baseCost, id: "main-food", vendorId: null, sessionId: sessions[1].id, label: "Main meal", category: "food", amountMinor: 100, pricingModel: "per_guest", evidence: "estimate" },
+    { ...baseCost, id: "shared-drinks", vendorId: null, sessionId: null, label: "Shared drinks", category: "other", amountMinor: 50, pricingModel: "per_guest", evidence: "estimate" },
+    { ...baseCost, id: "venue-hire", vendorId: null, sessionId: sessions[0].id, label: "Welcome venue", category: "venue", amountMinor: 5000, pricingModel: "fixed", evidence: "estimate" },
+  ];
+  const plan = savedPlanSchema.parse({
+    ...seed,
+    budget: { ...seed.budget, items: costs },
+    sessionAttendance: sessions.map((session) => ({ sessionId: session.id, confirmedGuests: null })),
+  });
+  const welcome = plan.budget.items.find((item) => item.id === "welcome-food");
+  const main = plan.budget.items.find((item) => item.id === "main-food");
+  const shared = plan.budget.items.find((item) => item.id === "shared-drinks");
+  const fixed = plan.budget.items.find((item) => item.id === "venue-hire");
+
+  assert.equal(expectedGuestsForCostItem(plan, welcome), 80);
+  assert.equal(forecastCostItem(welcome, expectedGuestsForCostItem(plan, welcome)).lowerMinor, 8000);
+  assert.equal(forecastCostItem(main, expectedGuestsForCostItem(plan, main)).lowerMinor, 12000);
+  assert.equal(forecastCostItem(shared, expectedGuestsForCostItem(plan, shared)).lowerMinor, 7500);
+  assert.equal(forecastCostItem(fixed, expectedGuestsForCostItem(plan, fixed)).lowerMinor, 5000);
+  assert.equal(calculateBudgetHealth(plan).knownCostsMinor, 32500);
+});
+
+test("import re-identification keeps session links aligned across briefs, tasks, costs, and attendance", () => {
+  const sessions = [{ id: "session-main", name: "Main celebration", date: "2027-02-14", guestCount: 90 }];
+  const brief = { ...EXAMPLE_BRIEF, sessions };
+  const seed = createSavedPlan(brief, brief, EXAMPLE_PROPOSAL, "session-import-source", CREATED_AT);
+  const linked = savedPlanSchema.parse({
+    ...seed,
+    tasks: seed.tasks.map((task, index) => index === 0 ? { ...task, sessionId: sessions[0].id } : task),
+    budget: { ...seed.budget, items: seed.budget.items.map((item, index) => index === 0 ? { ...item, sessionId: sessions[0].id } : item) },
+    sessionAttendance: [{ sessionId: sessions[0].id, confirmedGuests: 72 }],
+  });
+  const imported = reidentifyPlan(linked, "session-import-copy", "2026-10-21T12:00:00.000Z");
+  const newSessionId = imported.planBrief.sessions[0].id;
+
+  assert.notEqual(newSessionId, sessions[0].id);
+  assert.equal(imported.draftBrief.sessions[0].id, newSessionId);
+  assert.equal(imported.tasks[0].sessionId, newSessionId);
+  assert.equal(imported.budget.items[0].sessionId, newSessionId);
+  assert.deepEqual(imported.sessionAttendance, [{ sessionId: newSessionId, confirmedGuests: 72 }]);
 });
 
 test("import rejects malformed, oversized, unsupported, and broken-reference documents", () => {
@@ -80,6 +262,7 @@ test("budget health keeps estimates, commitments, payments, and reserve distinct
     amountMinor: 20_000,
     evidence: "committed",
     paidMinor: 7_000,
+    payments: [{ id: "deposit-1", amountMinor: 7_000, paidAt: "2026-10-20", note: "Venue deposit" }],
     mandatory: true,
   };
   const withCommitment = {
@@ -118,7 +301,12 @@ test("budget health keeps estimates, commitments, payments, and reserve distinct
 test("changing one estimate into a commitment does not add a second expense", () => {
   const plan = makePlan();
   const estimate = { ...plan.budget.items[0], amountMinor: 20_000, evidence: "estimate" };
-  const committed = { ...estimate, evidence: "committed", paidMinor: 5_000 };
+  const committed = {
+    ...estimate,
+    evidence: "committed",
+    paidMinor: 5_000,
+    payments: [{ id: "payment-1", amountMinor: 5_000, paidAt: "2026-10-20", note: "Deposit" }],
+  };
   const revised = {
     ...plan,
     budget: {
@@ -133,6 +321,71 @@ test("changing one estimate into a commitment does not add a second expense", ()
   assert.equal(health.knownCostsMinor, 20_000);
   assert.equal(health.paidMinor, 5_000);
   assert.equal(health.outstandingCommittedMinor, 15_000);
+});
+
+test("later payments update paid and outstanding while the commitment forecast stays fixed", () => {
+  const plan = makePlan();
+  const commitmentBase = {
+    ...plan.budget.items[0],
+    amountMinor: 50_000,
+    amountMaxMinor: null,
+    evidence: "committed",
+    paidMinor: 0,
+    payments: [],
+    feesIncluded: true,
+  };
+  const commitment = addCostPayment(commitmentBase, { id: "payment-1", amountMinor: 10_000, paidAt: "2026-10-20", note: "Deposit" }, 50_000);
+  const firstPayment = {
+    ...plan,
+    budget: { ...plan.budget, reviewComplete: true, items: [commitment, ...plan.budget.items.slice(1)] },
+  };
+  const laterPayment = {
+    ...firstPayment,
+    budget: {
+      ...firstPayment.budget,
+      items: [addCostPayment(commitment, { id: "payment-2", amountMinor: 22_000, paidAt: "2026-10-21", note: "Second installment" }, 50_000), ...firstPayment.budget.items.slice(1)],
+    },
+  };
+  const firstHealth = calculateBudgetHealth(firstPayment);
+  const laterHealth = calculateBudgetHealth(laterPayment);
+
+  assert.equal(firstHealth.knownCostsMinor, 50_000);
+  assert.equal(laterHealth.knownCostsMinor, firstHealth.knownCostsMinor);
+  assert.equal(firstHealth.paidMinor, 10_000);
+  assert.equal(laterHealth.paidMinor, 32_000);
+  assert.equal(firstHealth.outstandingCommittedMinor, 40_000);
+  assert.equal(laterHealth.outstandingCommittedMinor, 18_000);
+  assert.deepEqual(laterPayment.budget.items[0].payments.map(({ amountMinor }) => amountMinor), [10_000, 22_000]);
+
+  const roundTrip = parseWorkspaceJson(serializeWorkspace({
+    format: "mehfiloom-workspace",
+    schemaVersion: 3,
+    activePlanId: laterPayment.id,
+    plans: [laterPayment],
+  }));
+  assert.deepEqual(roundTrip.plans[0].budget.items[0].payments, laterPayment.budget.items[0].payments);
+  const afterRemoval = removeCostPayment(laterPayment.budget.items[0], "payment-1");
+  assert.equal(afterRemoval.paidMinor, 22_000);
+  assert.equal(afterRemoval.payments.length, 1);
+  assert.throws(() => addCostPayment(commitment, { id: "payment-too-large", amountMinor: 40_001, paidAt: null, note: "Overpayment" }, 50_000), /remaining commitment balance/);
+  assert.throws(() => removeCostPayment(commitment, "missing-payment"), /not found/);
+});
+
+test("payment history must match the paid total and only belong to a commitment", () => {
+  const plan = makePlan();
+  const base = plan.budget.items[0];
+  const payment = { id: "payment-one", amountMinor: 2_500, paidAt: "2026-10-20", note: "Deposit" };
+  const mismatch = {
+    ...plan,
+    budget: { ...plan.budget, items: [{ ...base, amountMinor: 10_000, evidence: "committed", paidMinor: 3_000, payments: [payment] }, ...plan.budget.items.slice(1)] },
+  };
+  assert.throws(() => savedPlanSchema.parse(mismatch), /Recorded payments must add up to the paid total/);
+
+  const uncommitted = {
+    ...plan,
+    budget: { ...plan.budget, items: [{ ...base, payments: [payment] }, ...plan.budget.items.slice(1)] },
+  };
+  assert.throws(() => savedPlanSchema.parse(uncommitted), /Payments can only be recorded against a commitment/);
 });
 
 test("budget feasibility flags a recorded forecast above the cap", () => {
@@ -161,6 +414,7 @@ test("per-guest quotes apply the greater of expected and minimum billable attend
     evidence: "quote",
     mandatory: true,
     minimumGuestCount: 150,
+    feesIncluded: true,
   };
   const priced = {
     ...plan,
@@ -211,7 +465,7 @@ test("a marked-complete cost review still reports unresolved mandatory costs", (
   assert.equal(health.state, "unknown");
 });
 
-test("mandatory fees with unknown inclusion prevent a green budget status", () => {
+test("unresolved mandatory fee amounts prevent a green budget status", () => {
   const plan = makePlan();
   const mandatoryCost = {
     ...plan.budget.items[0],
@@ -225,8 +479,14 @@ test("mandatory fees with unknown inclusion prevent a green budget status", () =
     budget: { ...plan.budget, items: [mandatoryCost, ...plan.budget.items.slice(1)], reviewComplete: true },
   };
 
-  assert.equal(calculateBudgetHealth(withUnknownFees).unknownMandatoryFeeCount, 1);
+  assert.equal(calculateBudgetHealth(withUnknownFees).unresolvedMandatoryFeeCount, 1);
   assert.equal(calculateBudgetHealth(withUnknownFees).state, "unknown");
+  const feesExcluded = calculateBudgetHealth({
+    ...withUnknownFees,
+    budget: { ...withUnknownFees.budget, items: [{ ...mandatoryCost, feesIncluded: false }, ...withUnknownFees.budget.items.slice(1)] },
+  });
+  assert.equal(feesExcluded.unresolvedMandatoryFeeCount, 1);
+  assert.equal(feesExcluded.state, "unknown", "an excluded fee without a recorded amount is not a complete forecast");
   assert.equal(calculateBudgetHealth({
     ...withUnknownFees,
     budget: { ...withUnknownFees.budget, items: [{ ...mandatoryCost, feesIncluded: true }, ...withUnknownFees.budget.items.slice(1)] },
