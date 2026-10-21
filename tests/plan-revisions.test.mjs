@@ -381,6 +381,26 @@ test("changing one overlapping session updates only its scoped costs, preserves 
   assert.equal(revised.budget.reviewComplete, false, "a changed billed quantity reopens the budget review");
 });
 
+test("revision keeps a manually assigned task session when the candidate omits its scope", () => {
+  const sessions = [{ id: "session-welcome", name: "Welcome gathering", date: "2027-02-13", guestCount: 80 }];
+  const brief = { ...EXAMPLE_BRIEF, sessions };
+  const seed = createSavedPlan(brief, brief, EXAMPLE_PROPOSAL, "manual-task-session-revision", CREATED_AT, "ai");
+  const manuallyAssignedTask = seed.tasks[0];
+  const current = validateSavedPlan({
+    ...seed,
+    manualTaskIds: [manuallyAssignedTask.id],
+    tasks: seed.tasks.map((task, index) => index === 0 ? { ...task, sessionId: sessions[0].id } : task),
+  });
+  const candidate = createSavedPlan(brief, brief, EXAMPLE_PROPOSAL, current.id, GENERATED_AT, "ai");
+  const revised = acceptPlanRevision(current, current, candidate, "Keep the existing task assigned to the welcome gathering.", ACCEPTED_AT);
+  const matchingTasks = revised.tasks.filter((task) => task.title === manuallyAssignedTask.title);
+
+  assert.equal(matchingTasks.length, 1, "the candidate task must not be duplicated beside the manually edited task");
+  assert.equal(matchingTasks[0].id, manuallyAssignedTask.id);
+  assert.equal(matchingTasks[0].sessionId, sessions[0].id, "the host's session assignment remains intact");
+  assert.deepEqual(revised.manualTaskIds, [manuallyAssignedTask.id]);
+});
+
 test("session removal is blocked independently for linked costs, confirmed attendance, and preserved task work", () => {
   const sessions = [{ id: "session-one", name: "Main gathering", date: "", guestCount: 40 }];
   const brief = { ...EXAMPLE_BRIEF, sessions };

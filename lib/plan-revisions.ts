@@ -258,9 +258,13 @@ export function acceptPlanRevision(
   const candidateTaskIdMap = new Map<string, string>();
   const matchedTaskIds = new Set<string>();
   candidate.tasks.forEach((proposedTask, index) => {
-    const previous = current.tasks.find((task) => !matchedTaskIds.has(task.id)
+    const previousInScope = current.tasks.find((task) => !matchedTaskIds.has(task.id)
       && task.sessionId === proposedTask.sessionId
       && normalizeTaskTitle(task.title) === normalizeTaskTitle(proposedTask.title));
+    const preservedTitleMatches = previousInScope ? [] : current.tasks.filter((task) => !matchedTaskIds.has(task.id)
+      && preservedTaskIds.has(task.id)
+      && normalizeTaskTitle(task.title) === normalizeTaskTitle(proposedTask.title));
+    const previous = previousInScope ?? (preservedTitleMatches.length === 1 ? preservedTitleMatches[0] : undefined);
     if (previous) {
       matchedTaskIds.add(previous.id);
       candidateTaskIdMap.set(proposedTask.id, previous.id);
