@@ -302,6 +302,28 @@ test("Groq revision prompts carry accepted opt-outs and concrete dietary/access 
   }));
 });
 
+test("Groq asks about omitted optional preferences without inferring practices or sources", async () => {
+  let capturedRequest;
+  const client = {
+    chat: { completions: {
+      async create(request) {
+        capturedRequest = request;
+        return { choices: [{ message: { content: JSON.stringify(EXAMPLE_PROPOSAL) }, finish_reason: "stop" }] };
+      },
+    } },
+  };
+  const sparseBrief = { ...EXAMPLE_BRIEF, style: "", mustHaves: "" };
+
+  await createProposalGenerator(client)(sparseBrief);
+
+  assert.match(capturedRequest.messages[0].content, /ask only a relevant optional question or say that none was supplied/);
+  assert.match(capturedRequest.messages[0].content, /do not infer them from the event type, name, place, or identity/);
+  assert.match(capturedRequest.messages[0].content, /Do not invent .*factual sources, citations/);
+  assert.match(capturedRequest.messages[1].content, /"style":""/);
+  assert.match(capturedRequest.messages[1].content, /"mustHaves":""/);
+  assert.match(capturedRequest.messages[1].content, /Ask which traditions, cultural or religious practices, languages, and family preferences to include or avoid/);
+});
+
 test("Groq adapter keeps hostile brief and revision text as data and grants no tools", async () => {
   let capturedRequest;
   const client = {
