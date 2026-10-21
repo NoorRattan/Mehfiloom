@@ -1,5 +1,5 @@
 import { buildPlanResult, parseBudgetMinor, type EventBrief, type PlannerProposal } from "./planner.ts";
-import { validateSavedPlan, type PlanRevisionSnapshot, type SavedPlan, type TaskRecord, type VendorRecord } from "./plan-store.ts";
+import { expectedGuestsForCostItem, validateSavedPlan, type PlanRevisionSnapshot, type SavedPlan, type TaskRecord, type VendorRecord } from "./plan-store.ts";
 
 export type RevisionChange = {
   title: string;
@@ -365,6 +365,13 @@ export function acceptPlanRevision(
   const nextBudget = parseBudgetMinor(candidate.planBrief.budgetAmount, candidate.planBrief.currency);
   const budgetCapChanged = nextBudget !== current.budget.capMinor;
   const budgetPrioritiesChanged = !same(current.proposal.budgetAllocations, candidate.proposal.budgetAllocations);
+  const billedCostQuantityChanged = current.budget.items.some((item) => {
+    if (item.pricingModel !== "per_guest") return false;
+    const minimum = item.minimumGuestCount ?? 0;
+    const currentQuantity = Math.max(expectedGuestsForCostItem(current, item), minimum);
+    const candidateQuantity = Math.max(expectedGuestsForCostItem(candidate, item), minimum);
+    return currentQuantity !== candidateQuantity;
+  });
   const merged = validateSavedPlan({
     ...current,
     updatedAt: acceptedAt,
@@ -397,7 +404,7 @@ export function acceptPlanRevision(
       ...current.budget,
       currency: candidate.budget.currency,
       capMinor: nextBudget,
-      reviewComplete: current.budget.reviewComplete && !budgetCapChanged && !budgetPrioritiesChanged && newCostItems.length === 0,
+      reviewComplete: current.budget.reviewComplete && !budgetCapChanged && !budgetPrioritiesChanged && !billedCostQuantityChanged && newCostItems.length === 0,
       items: [...budgetItems, ...newCostItems],
     },
     guestSummary: {

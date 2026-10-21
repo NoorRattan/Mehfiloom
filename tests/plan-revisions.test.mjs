@@ -281,6 +281,7 @@ test("120-to-160 guest revisions recalculate quantity costs and expose the cap b
     assert.equal(originalHealth.state, "within_cap", eventType + ": 120-guest plan fits the synthetic cap");
     assert.equal(revisedHealth.state, "over_cap", eventType + ": 160-guest plan remains visibly infeasible");
     assert.equal(revised.guestSummary.expected, 160);
+    assert.equal(revised.budget.reviewComplete, false, eventType + ": changed billable attendance reopens the cost review");
     assert.equal(revised.planBrief.mustHaves, hardRequirement);
     assert.equal(revised.preferences.find((preference) => preference.priority === "hard").statement, hardRequirement);
     assert.equal(revised.tasks[0].timing, "Reconfirm after the updated attendance estimate");
@@ -295,70 +296,174 @@ test("120-to-160 guest revisions recalculate quantity costs and expose the cap b
   }
 });
 
-test("changing one session attendance updates only its scoped variable costs and preserves other work", () => {
+test("changing one overlapping session updates only its scoped costs, preserves constraints, and exposes infeasibility", () => {
   const sessions = [
     { id: "session-welcome", name: "Welcome gathering", date: "2027-02-13", guestCount: 80 },
     { id: "session-main", name: "Main celebration", date: "2027-02-14", guestCount: 120 },
   ];
-  const brief = { ...EXAMPLE_BRIEF, guestCount: 150, sessions };
+  const hardRequirement = "Step-free access, an allergen-aware vegetarian meal, and a quiet room for sensory breaks.";
+  const brief = { ...EXAMPLE_BRIEF, guestCount: 150, budgetAmount: "360", mustHaves: hardRequirement, sessions };
   const proposal = structuredClone(EXAMPLE_PROPOSAL);
   proposal.timeline[0].sessionId = sessions[0].id;
+  proposal.timeline[1].sessionId = sessions[1].id;
   const seed = createSavedPlan(brief, brief, proposal, "session-revision", CREATED_AT, "ai");
-  const cost = seed.budget.items[0];
+  const costTemplate = seed.budget.items[0];
+  const makeCost = (id, label, sessionId, amountMinor, pricingModel) => ({
+    ...costTemplate,
+    id,
+    label,
+    vendorId: null,
+    sessionId,
+    amountMinor,
+    amountMaxMinor: null,
+    pricingModel,
+    evidence: "estimate",
+    paidMinor: 0,
+    payments: [],
+    mandatory: true,
+    validUntil: null,
+    minimumGuestCount: null,
+    feesIncluded: true,
+    taxesIncluded: true,
+    chargesReviewed: true,
+    adjustments: [],
+    exclusions: [],
+    sourceNote: "Synthetic test fixture; not a market quote.",
+  });
   const current = validateSavedPlan({
     ...seed,
-    tasks: seed.tasks.map((task, index) => index === 0 ? { ...task, status: "done", sessionId: sessions[0].id } : task),
+    tasks: seed.tasks.map((task, index) => index === 0 ? { ...task, status: "done" } : task),
     sessionAttendance: [
       { sessionId: sessions[0].id, confirmedGuests: 72 },
       { sessionId: sessions[1].id, confirmedGuests: 104 },
     ],
     budget: {
       ...seed.budget,
+      reviewComplete: true,
       items: [
-        { ...cost, id: "welcome-meals", vendorId: null, sessionId: sessions[0].id, amountMinor: 100, pricingModel: "per_guest", evidence: "estimate" },
-        { ...cost, id: "main-meals", vendorId: null, sessionId: sessions[1].id, amountMinor: 100, pricingModel: "per_guest", evidence: "estimate" },
-        { ...cost, id: "shared-venue", vendorId: null, sessionId: null, amountMinor: 5000, pricingModel: "fixed", evidence: "estimate" },
+        ...seed.budget.items,
+        makeCost("welcome-meals", "Welcome meal", sessions[0].id, 100, "per_guest"),
+        makeCost("main-meals", "Main meal", sessions[1].id, 100, "per_guest"),
+        makeCost("shared-refreshments", "Shared refreshments", null, 50, "per_guest"),
+        makeCost("shared-venue", "Shared venue", null, 5000, "fixed"),
       ],
     },
   });
   const revisedBrief = { ...brief, sessions: sessions.map((session, index) => index === 0 ? { ...session, guestCount: 100 } : session) };
   const revisedProposal = structuredClone(proposal);
   const candidate = createSavedPlan(revisedBrief, revisedBrief, revisedProposal, current.id, GENERATED_AT, "ai");
+  const currentHealth = calculateBudgetHealth(current);
   const changes = diffPlanRevision(current, candidate);
   const revised = acceptPlanRevision(current, current, candidate, "Attendance changed for the welcome gathering; update the applicable plan lines.", ACCEPTED_AT);
   const welcomeMeals = revised.budget.items.find((item) => item.id === "welcome-meals");
   const mainMeals = revised.budget.items.find((item) => item.id === "main-meals");
-  const venue = revised.budget.items.find((item) => item.id === "shared-venue");
+  const sharedRefreshments = revised.budget.items.find((item) => item.id === "shared-refreshments");
+  const sharedVenue = revised.budget.items.find((item) => item.id === "shared-venue");
 
   assert.ok(changes.some((change) => change.title === "Session attendance" && /80 → 100 expected/.test(change.detail)));
   assert.equal(revised.guestSummary.expected, 150, "session counts must not be added to the unique guest estimate");
   assert.equal(revised.sessionAttendance.find((item) => item.sessionId === sessions[0].id).confirmedGuests, 72);
   assert.equal(revised.sessionAttendance.find((item) => item.sessionId === sessions[1].id).confirmedGuests, 104);
-  assert.equal(revised.tasks.find((task) => task.title === current.tasks[0].title).status, "done");
+  assert.equal(revised.tasks.find((task) => task.id === current.tasks[0].id).status, "done");
+  assert.equal(revised.tasks.find((task) => task.id === current.tasks[0].id).sessionId, sessions[0].id);
+  assert.equal(revised.tasks.find((task) => task.id === current.tasks[1].id).sessionId, sessions[1].id);
+  assert.equal(revised.planBrief.mustHaves, hardRequirement);
+  assert.equal(revised.preferences.find((preference) => preference.priority === "hard").statement, hardRequirement);
   assert.equal(expectedGuestsForCostItem(revised, welcomeMeals), 100);
   assert.equal(forecastCostItem(welcomeMeals, expectedGuestsForCostItem(revised, welcomeMeals)).lowerMinor, 10000);
   assert.equal(forecastCostItem(mainMeals, expectedGuestsForCostItem(revised, mainMeals)).lowerMinor, 12000);
-  assert.equal(forecastCostItem(venue, expectedGuestsForCostItem(revised, venue)).lowerMinor, 5000);
+  assert.equal(forecastCostItem(sharedRefreshments, expectedGuestsForCostItem(revised, sharedRefreshments)).lowerMinor, 7500);
+  assert.equal(forecastCostItem(sharedVenue, expectedGuestsForCostItem(revised, sharedVenue)).lowerMinor, 5000);
+  assert.equal(revised.budget.items.filter((item) => item.id === "shared-refreshments").length, 1);
+  assert.equal(revised.budget.items.filter((item) => item.id === "shared-venue").length, 1);
+  assert.equal(currentHealth.state, "within_cap");
+  assert.equal(calculateBudgetHealth(revised).state, "over_cap", "the changed session cost must leave the over-cap result visible");
+  assert.equal(revised.budget.reviewComplete, false, "a changed billed quantity reopens the budget review");
 });
 
-test("a revision cannot remove a session that still has cost, attendance, or preserved task records", () => {
+test("session removal is blocked independently for linked costs, confirmed attendance, and preserved task work", () => {
   const sessions = [{ id: "session-one", name: "Main gathering", date: "", guestCount: 40 }];
   const brief = { ...EXAMPLE_BRIEF, sessions };
   const proposal = structuredClone(EXAMPLE_PROPOSAL);
   proposal.timeline[0].sessionId = sessions[0].id;
   const seed = createSavedPlan(brief, brief, proposal, "session-removal", CREATED_AT, "ai");
+  const noSessionBrief = { ...brief, sessions: [] };
+  const candidate = createSavedPlan(noSessionBrief, noSessionBrief, EXAMPLE_PROPOSAL, seed.id, GENERATED_AT, "ai");
+  const removalGuards = [
+    {
+      name: "linked cost",
+      update: (plan) => ({
+        ...plan,
+        budget: {
+          ...plan.budget,
+          items: plan.budget.items.map((item, index) => index === 0 ? { ...item, sessionId: sessions[0].id } : item),
+        },
+      }),
+    },
+    {
+      name: "confirmed attendance",
+      update: (plan) => ({ ...plan, sessionAttendance: [{ sessionId: sessions[0].id, confirmedGuests: 38 }] }),
+    },
+    {
+      name: "completed task",
+      update: (plan) => ({
+        ...plan,
+        tasks: plan.tasks.map((task, index) => index === 0 ? { ...task, status: "done" } : task),
+      }),
+    },
+    {
+      name: "manually edited task",
+      update: (plan) => ({
+        ...plan,
+        manualTaskIds: [plan.tasks[0].id],
+        tasks: plan.tasks.map((task, index) => index === 0 ? { ...task, ownerLabel: "Avery" } : task),
+      }),
+    },
+  ];
+
+  for (const guard of removalGuards) {
+    const current = validateSavedPlan(guard.update(seed));
+    assert.throws(
+      () => acceptPlanRevision(current, current, candidate, "Remove the session that has already been planned.", ACCEPTED_AT),
+      /reassign or clear that work/i,
+      guard.name,
+    );
+  }
+
+  const safeRemoval = acceptPlanRevision(seed, seed, candidate, "Remove the unused session from the plan.", ACCEPTED_AT);
+  assert.equal(safeRemoval.planBrief.sessions.length, 0, "an unused session can be removed");
+});
+
+test("a changed headcount below the saved per-guest minimum keeps the completed budget review", () => {
+  const brief = { ...EXAMPLE_BRIEF, guestCount: 100 };
+  const seed = createSavedPlan(brief, brief, EXAMPLE_PROPOSAL, "minimum-quantity-review", CREATED_AT, "ai");
   const current = validateSavedPlan({
     ...seed,
-    tasks: seed.tasks.map((task, index) => index === 0 ? { ...task, sessionId: sessions[0].id, status: "done" } : task),
-    sessionAttendance: [{ sessionId: sessions[0].id, confirmedGuests: 38 }],
+    budget: {
+      ...seed.budget,
+      reviewComplete: true,
+      items: seed.budget.items.map((item, index) => index === 0 ? {
+        ...item,
+        amountMinor: 250,
+        amountMaxMinor: null,
+        pricingModel: "per_guest",
+        minimumGuestCount: 120,
+        evidence: "estimate",
+        mandatory: true,
+        feesIncluded: true,
+        taxesIncluded: true,
+        chargesReviewed: true,
+        sourceNote: "Synthetic test fixture; not a market quote.",
+      } : item),
+    },
   });
-  const noSessionBrief = { ...brief, sessions: [] };
-  const candidate = createSavedPlan(noSessionBrief, noSessionBrief, EXAMPLE_PROPOSAL, current.id, GENERATED_AT, "ai");
+  const revisedBrief = { ...brief, guestCount: 110 };
+  const candidate = createSavedPlan(revisedBrief, revisedBrief, EXAMPLE_PROPOSAL, current.id, GENERATED_AT, "ai");
+  const revised = acceptPlanRevision(current, current, candidate, "Increase the expected attendance to 110 guests.", ACCEPTED_AT);
 
-  assert.throws(
-    () => acceptPlanRevision(current, current, candidate, "Remove the session that has already been planned.", ACCEPTED_AT),
-    /reassign or clear that work/i,
-  );
+  assert.equal(expectedGuestsForCostItem(revised, revised.budget.items[0]), 110);
+  assert.equal(revised.budget.items[0].minimumGuestCount, 120);
+  assert.equal(revised.budget.reviewComplete, true, "the billable quantity remains at the saved minimum");
 });
 
 test("restoration creates a new monotonic revision and can toggle back", () => {

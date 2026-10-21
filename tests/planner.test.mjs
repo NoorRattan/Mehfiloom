@@ -290,6 +290,8 @@ test("Groq revision prompts carry accepted opt-outs and concrete dietary/access 
 
   assert.match(capturedRequest.messages[0].content, /explicit activity opt-outs/);
   assert.match(capturedRequest.messages[0].content, /Never reintroduce an excluded activity or a close variant/);
+  assert.match(capturedRequest.messages[0].content, /Preserve stated must-haves, dietary\/allergen needs, accessibility needs, and explicit activity opt-outs/);
+  assert.match(capturedRequest.messages[0].content, /If constraints conflict, surface the conflict instead of silently dropping a hard need/);
   assert.match(capturedRequest.messages[0].content, /reason for fit to a concrete stated preference/);
   assert.ok(capturedRequest.messages[1].content.includes(JSON.stringify(brief.mustHaves)));
   assert.ok(capturedRequest.messages[1].content.includes(JSON.stringify(brief.style)));
