@@ -173,7 +173,7 @@ export function currencyDigits(currency: string): number {
   }).resolvedOptions().maximumFractionDigits ?? 2;
 }
 
-export function parseBudgetMinor(amount: string, currency: string): number {
+export function parseBudgetMinor(amount: string, currency: string, allowZero = false): number {
   const digits = currencyDigits(currency);
   const cleaned = amount.trim();
   const pattern = digits === 0 ? /^\d{1,12}$/ : new RegExp(`^\\d{1,12}(?:\\.\\d{1,${digits}})?$`);
@@ -188,8 +188,10 @@ export function parseBudgetMinor(amount: string, currency: string): number {
   const [whole, fraction = ""] = cleaned.split(".");
   const scale = 10n ** BigInt(digits);
   const minor = BigInt(whole) * scale + BigInt((fraction.padEnd(digits, "0") || "0"));
-  if (minor <= 0n || minor > BigInt(MAX_BUDGET_MINOR)) {
-    throw new Error("Enter a positive budget within the supported planning range.");
+  if (minor < (allowZero ? 0n : 1n) || minor > BigInt(MAX_BUDGET_MINOR)) {
+    throw new Error(allowZero
+      ? "Enter a non-negative amount within the supported planning range."
+      : "Enter a positive budget within the supported planning range.");
   }
   return Number(minor);
 }

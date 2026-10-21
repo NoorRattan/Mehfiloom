@@ -1,5 +1,6 @@
 import {
   LEGACY_WORKSPACE_STORAGE_KEY,
+  OLDEST_WORKSPACE_STORAGE_KEY,
   OLDER_WORKSPACE_STORAGE_KEY,
   WORKSPACE_STORAGE_KEY,
   parseWorkspaceJson,
@@ -16,7 +17,8 @@ export interface WorkspaceStorage {
 export function loadWorkspaceFromStorage(storage: Pick<WorkspaceStorage, "getItem">): Workspace | null {
   const raw = storage.getItem(WORKSPACE_STORAGE_KEY)
     ?? storage.getItem(LEGACY_WORKSPACE_STORAGE_KEY)
-    ?? storage.getItem(OLDER_WORKSPACE_STORAGE_KEY);
+    ?? storage.getItem(OLDER_WORKSPACE_STORAGE_KEY)
+    ?? storage.getItem(OLDEST_WORKSPACE_STORAGE_KEY);
   return raw === null ? null : parseWorkspaceJson(raw);
 }
 
@@ -31,4 +33,5 @@ export function clearWorkspaceStorage(storage: Pick<WorkspaceStorage, "removeIte
   storage.removeItem(WORKSPACE_STORAGE_KEY);
   storage.removeItem(LEGACY_WORKSPACE_STORAGE_KEY);
   storage.removeItem(OLDER_WORKSPACE_STORAGE_KEY);
+  storage.removeItem(OLDEST_WORKSPACE_STORAGE_KEY);
 }

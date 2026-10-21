@@ -43,6 +43,9 @@ import {
   MAX_SAVED_PLANS,
   MAX_PLAN_DOCUMENT_BYTES,
   addCostPayment,
+  canAddTaskDependency,
+  canMarkTaskDone,
+  canReopenTask,
   calculateBudgetHealth,
   createSavedPlan,
   createWorkspace,
@@ -54,7 +57,9 @@ import {
   removeCostPayment,
   savedPlanSchema,
   serializePlanDocument,
+  taskScheduleConflicts,
   type CostItem,
+  type CostAdjustment,
   type SavedPlan,
   type TaskRecord,
   type VendorRecord,
@@ -67,6 +72,7 @@ import {
 } from "@/lib/plan-storage";
 import { acceptPlanRevision, diffPlanRevision, restorePreviousPlanRevision, type PendingPlanRevision } from "@/lib/plan-revisions";
 import { PaymentHistoryPanel, type PaymentDraft } from "./PaymentHistoryPanel";
+import { CostAdjustmentsEditor, type CostAdjustmentDraft } from "./CostAdjustmentsEditor";
 
 const EVENT_LABELS: Record<EventType, string> = {
   wedding: "Wedding",
@@ -143,6 +149,13 @@ function moneyRange(lowerMinor: number, upperMinor: number, currency: string): s
     : `${formatMoney(lowerMinor, currency)}–${formatMoney(upperMinor, currency)}`;
 }
 
+function localDateOnly(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function downloadJson(name: string, content: string) {
   const url = URL.createObjectURL(new Blob([content], { type: "application/json" }));
   const anchor = document.createElement("a");
@@ -192,6 +205,7 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
   const [workspace, setWorkspace] = useState<Workspace>(() => createWorkspace(makeSeedPlan(initialEventType)));
   const [storageReady, setStorageReady] = useState(false);
   const [storageLoadFailed, setStorageLoadFailed] = useState(false);
+  const [todayDate, setTodayDate] = useState("");
   const [storageStatus, setStorageStatus] = useState("Loading plans on this device…");
   const [storageError, setStorageError] = useState("");
   const [error, setError] = useState("");
@@ -242,7 +256,10 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
         setStorageError(loadError instanceof Error ? loadError.message : "Could not read this device’s saved plans.");
         setStorageStatus("Saved plans need attention");
       } finally {
-        if (active) setStorageReady(true);
+        if (active) {
+          setTodayDate(localDateOnly());
+          setStorageReady(true);
+        }
       }
     }
     void loadFromDevice();
@@ -281,6 +298,8 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
   const completeCount = activePlan.tasks.filter((task) => task.status === "done").length;
   const validatedPlan = savedPlanSchema.safeParse(activePlan);
   const budgetHealth = validatedPlan.success ? calculateBudgetHealth(activePlan) : null;
+  const taskById = new Map(activePlan.tasks.map((task) => [task.id, task]));
+  const scheduleConflicts = taskScheduleConflicts(activePlan.tasks, submittedBrief.eventDate, todayDate);
   const guestsOverExpected = activePlan.guestSummary.confirmed !== null && activePlan.guestSummary.confirmed > activePlan.guestSummary.expected;
   const quoteMinimumsOverExpected = activePlan.budget.items.filter((item) => item.minimumGuestCount !== null && item.minimumGuestCount > expectedGuestsForCostItem(activePlan, item));
   const sessionsOverExpected = activePlan.sessionAttendance.filter((attendance) => {
@@ -541,6 +560,134 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
     updateActivePlan((current) => ({ ...current, edited: true, budget: { ...current.budget, reviewComplete: false, items: current.budget.items.map((cost) => cost.id === costId ? update(cost) : cost) } }));
   }
 
+  function updateCostProjection(cost: CostItem, change: Partial<CostItem>, overpaymentMessage: string) {
+    try {
+      const candidate = { ...cost, ...change };
+      const total = forecastCostItem(candidate, expectedGuestsForCostItem(activePlan, candidate)).lowerMinor;
+      if (total !== null && cost.paidMinor > total) throw new Error(overpaymentMessage);
+      updateCost(cost.id, (current) => ({ ...current, ...change, chargesReviewed: false }));
+      setCostMessage("");
+    } catch (costError) {
+      setCostMessage(costError instanceof Error ? costError.message : "This change would make the cost forecast invalid.");
+    }
+  }
+
+  function saveCostAdjustment(costId: string, adjustmentId: string | null, draft: CostAdjustmentDraft): boolean {
+    try {
+      const amountMinor = parseBudgetMinor(draft.amount, currency, true);
+      const amountMaxMinor = draft.amountMax.trim() ? parseBudgetMinor(draft.amountMax, currency, true) : null;
+      if (amountMaxMinor !== null && amountMaxMinor < amountMinor) throw new Error("The upper adjustment must be at least the lower amount.");
+      const cost = activePlan.budget.items.find((item) => item.id === costId);
+      if (!cost) throw new Error("This cost line is no longer available.");
+      if (adjustmentId && !cost.adjustments.some((item) => item.id === adjustmentId)) {
+        throw new Error("This adjustment line is no longer available.");
+      }
+      const adjustment: CostAdjustment = {
+        id: adjustmentId ?? makeId(),
+        kind: draft.kind,
+        label: draft.label.trim(),
+        pricingModel: draft.pricingModel,
+        amountMinor,
+        amountMaxMinor,
+        sourceNote: draft.sourceNote.trim(),
+      };
+      const adjustments = adjustmentId
+        ? cost.adjustments.map((item) => item.id === adjustmentId ? adjustment : item)
+        : [...cost.adjustments, adjustment];
+      const updatedCost: CostItem = {
+        ...cost,
+        adjustments,
+        feesIncluded: draft.kind === "fee" ? false : cost.feesIncluded,
+        taxesIncluded: draft.kind === "tax" ? false : cost.taxesIncluded,
+        chargesReviewed: false,
+      };
+      const candidate = {
+        ...activePlan,
+        edited: true,
+        budget: { ...activePlan.budget, reviewComplete: false, items: activePlan.budget.items.map((item) => item.id === costId ? updatedCost : item) },
+      };
+      const parsed = savedPlanSchema.safeParse(candidate);
+      if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "Check the adjustment and its source.");
+      updateActivePlan(() => parsed.data);
+      setCostMessage("");
+      return true;
+    } catch (costError) {
+      setCostMessage(costError instanceof Error ? costError.message : "Enter a valid adjustment amount.");
+      return false;
+    }
+  }
+
+  function removeCostAdjustment(costId: string, adjustmentId: string): boolean {
+    const cost = activePlan.budget.items.find((item) => item.id === costId);
+    if (!cost) return false;
+    const candidate = {
+      ...activePlan,
+      edited: true,
+      budget: {
+        ...activePlan.budget,
+        reviewComplete: false,
+        items: activePlan.budget.items.map((item) => item.id === costId
+          ? { ...item, adjustments: item.adjustments.filter((adjustment) => adjustment.id !== adjustmentId), chargesReviewed: false }
+          : item),
+      },
+    };
+    const parsed = savedPlanSchema.safeParse(candidate);
+    if (!parsed.success) {
+      setCostMessage(parsed.error.issues[0]?.message ?? "This adjustment could not be removed.");
+      return false;
+    }
+    updateActivePlan(() => parsed.data);
+    setCostMessage("");
+    return true;
+  }
+
+  function updateChargeStatus(costId: string, field: "feesIncluded" | "taxesIncluded", value: boolean | null): boolean {
+    const cost = activePlan.budget.items.find((item) => item.id === costId);
+    if (!cost) return false;
+    const matchingKind = field === "feesIncluded" ? "fee" : "tax";
+    if (value === true && cost.adjustments.some((adjustment) => adjustment.kind === matchingKind)) {
+      setCostMessage(`Remove or reclassify the separate ${matchingKind} line before marking it included.`);
+      return false;
+    }
+    const candidate = {
+      ...activePlan,
+      edited: true,
+      budget: {
+        ...activePlan.budget,
+        reviewComplete: false,
+        items: activePlan.budget.items.map((item) => item.id === costId ? { ...item, [field]: value, chargesReviewed: false } : item),
+      },
+    };
+    const parsed = savedPlanSchema.safeParse(candidate);
+    if (!parsed.success) {
+      setCostMessage(parsed.error.issues[0]?.message ?? "This charge status could not be saved.");
+      return false;
+    }
+    updateActivePlan(() => parsed.data);
+    setCostMessage("");
+    return true;
+  }
+
+  function updateChargeReview(costId: string, checked: boolean): boolean {
+    const candidate = {
+      ...activePlan,
+      edited: true,
+      budget: {
+        ...activePlan.budget,
+        reviewComplete: false,
+        items: activePlan.budget.items.map((item) => item.id === costId ? { ...item, chargesReviewed: checked } : item),
+      },
+    };
+    const parsed = savedPlanSchema.safeParse(candidate);
+    if (!parsed.success) {
+      setCostMessage(parsed.error.issues[0]?.message ?? "Record a source and fee/tax status before completing this review.");
+      return false;
+    }
+    updateActivePlan(() => parsed.data);
+    setCostMessage("");
+    return true;
+  }
+
   function newPlan() {
     if (workspace.plans.length >= MAX_SAVED_PLANS) {
       setImportMessage(`A workspace can hold up to ${MAX_SAVED_PLANS} plans. Export one before adding another.`);
@@ -614,7 +761,7 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
     const cost: CostItem = {
       id: makeId(), label: costDraft.label.trim(), category: costDraft.category, vendorId: null, sessionId: costDraft.sessionId,
       amountMinor, amountMaxMinor, pricingModel: costDraft.pricingModel, evidence: costDraft.evidence, paidMinor: 0, payments: [], mandatory: costDraft.mandatory,
-      validUntil: null, minimumGuestCount: null, feesIncluded: null, exclusions: [], sourceNote: "",
+      validUntil: null, minimumGuestCount: null, feesIncluded: null, taxesIncluded: null, chargesReviewed: false, adjustments: [], exclusions: [], sourceNote: "",
     };
     if (cost.label.length < 2) { setCostMessage("Give the cost line a short label first."); return; }
     updateActivePlan((current) => ({ ...current, edited: true, budget: { ...current.budget, reviewComplete: false, items: [...current.budget.items, cost] } }));
@@ -652,7 +799,7 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
         if (cost.amountMaxMinor !== null && amountMinor > cost.amountMaxMinor) throw new Error("The lower amount cannot exceed the upper amount.");
         const commitmentTotal = forecastCostItem({ ...cost, amountMinor }, expectedGuestsForCostItem(activePlan, cost)).lowerMinor;
         if (commitmentTotal !== null && cost.paidMinor > commitmentTotal) throw new Error("Amount cannot be less than the payment already recorded.");
-        updateCost(cost.id, (current) => ({ ...current, amountMinor, evidence: current.evidence === "unpriced" ? "estimate" : current.evidence }));
+        updateCost(cost.id, (current) => ({ ...current, amountMinor, chargesReviewed: false, evidence: current.evidence === "unpriced" ? "estimate" : current.evidence }));
       }
       setCostMessage("");
     } catch (costError) {
@@ -666,7 +813,7 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
       const amountMaxMinor = value.trim() ? parseBudgetMinor(value, currency) : null;
       if (amountMaxMinor !== null && cost.amountMinor !== null && amountMaxMinor < cost.amountMinor) throw new Error("The upper amount must be at least the lower amount.");
       if (cost.evidence === "committed" && amountMaxMinor !== null && amountMaxMinor !== cost.amountMinor) throw new Error("A commitment needs one exact amount; clear the upper amount.");
-      updateCost(cost.id, (current) => ({ ...current, amountMaxMinor }));
+      updateCost(cost.id, (current) => ({ ...current, amountMaxMinor, chargesReviewed: false }));
       setCostMessage("");
     } catch (costError) {
       setCostMessage(costError instanceof Error ? costError.message : "Enter a valid upper amount.");
@@ -832,15 +979,94 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
             <div className="budget-surface"><div className="budget-topline"><span><CircleCheck size={16} /> Allocation adds up to your cap</span><small>Planning targets · not vendor quotes</small></div><div className="budget-grid">{plan.lines.map((line, index) => { const percentage = Math.max(0, Math.min(100, (line.amountMinor / Math.max(budgetTotal, 1)) * 100)); const category = BUDGET_CATEGORIES.find((item) => item === line.category); return <div className="budget-line" key={`${line.category}-${index}`}><div className="budget-line-head"><span>{category ? CATEGORY_LABELS[category] : line.category}</span><strong>{formatMoney(line.amountMinor, plan.currency)}</strong></div><div className="budget-track"><span className={`budget-fill fill-${index % 5}`} style={{ width: `${percentage}%` }} /></div><p>{line.rationale}</p></div>; })}</div><div className="budget-footnote">The split comes from relative priorities and exact arithmetic. Local costs, tax, and vendor availability still need checking.</div></div>
 
             <div className="section-heading timeline-heading"><div><span className="section-label">SMALL STEPS, GOOD MOMENTUM</span><h3>Your next steps <span className="task-count">{completeCount}/{activePlan.tasks.length} done</span></h3><p className="card-intro">Suggested timing is a starting point. Adjust it to your date, event scale, local availability, and confirmed requirements.</p></div><span className="heading-icon"><CalendarDays size={18} /></span></div>
-            <div className="timeline-list">{activePlan.tasks.map((task, index) => <div className={`timeline-item ${task.status === "done" ? "task-done" : ""}`} key={task.id}><button className="task-check" type="button" aria-label={`${task.status === "done" ? "Mark incomplete" : "Mark complete"}: ${task.title}`} aria-pressed={task.status === "done"} onClick={() => updateTask(task.id, (current) => ({ ...current, status: current.status === "done" ? "todo" : "done" }))}>{task.status === "done" && <Check size={13} />}</button><div className="timeline-copy">{editing ? <><input aria-label={`Task ${index + 1}`} value={task.title} onChange={(event) => updateTask(task.id, (current) => ({ ...current, title: event.target.value }))} maxLength={120} /><input aria-label={`Task ${index + 1} timing`} value={task.timing} onChange={(event) => updateTask(task.id, (current) => ({ ...current, timing: event.target.value }))} maxLength={80} /><div className="task-meta-edit"><label>Owner<input aria-label={`Task ${index + 1} owner`} value={task.ownerLabel} onChange={(event) => updateTask(task.id, (current) => ({ ...current, ownerLabel: event.target.value }))} maxLength={80} /></label><label>Due date<input aria-label={`Task ${index + 1} due date`} type="date" value={task.dueDate ?? ""} onChange={(event) => updateTask(task.id, (current) => ({ ...current, dueDate: event.target.value || null }))} /></label><label>Session / function<select aria-label={`Task ${index + 1} session`} value={task.sessionId ?? ""} onChange={(event) => updateTask(task.id, (current) => ({ ...current, sessionId: event.target.value || null }))}><option value="">Shared / whole event</option>{submittedBrief.sessions.map((session) => <option value={session.id} key={session.id}>{session.name}</option>)}</select></label></div></> : <><strong>{task.title}</strong><span><CalendarDays size={13} />{task.dueDate || task.timing} · {task.ownerLabel} · {sessionScopeLabel(submittedBrief.sessions, task.sessionId)}</span></>}</div><span className={`priority priority-${task.priority}`}>{task.priority}</span></div>)}</div>
+            <div className="timeline-list">
+              {activePlan.tasks.map((task, index) => {
+                const dependencyTasks = task.dependencyIds
+                  .map((dependencyId) => taskById.get(dependencyId))
+                  .filter((dependency): dependency is TaskRecord => dependency !== undefined);
+                const unmetDependencyTasks = dependencyTasks.filter((dependency) => dependency.status !== "done");
+                const completedDependents = activePlan.tasks.filter((candidate) => candidate.status === "done" && candidate.dependencyIds.includes(task.id));
+                const blocked = task.status !== "done" && !canMarkTaskDone(task, activePlan.tasks);
+                const completedBeforePrerequisites = task.status === "done" && unmetDependencyTasks.length > 0;
+                const cannotReopen = task.status === "done" && !canReopenTask(task, activePlan.tasks);
+
+                return (
+                  <div className={`timeline-item ${task.status === "done" ? "task-done" : ""}`} key={task.id}>
+                    <button
+                      className="task-check"
+                      type="button"
+                      aria-label={blocked
+                        ? `Complete prerequisite tasks before marking complete: ${unmetDependencyTasks.map((dependency) => dependency.title).join(", ")}`
+                        : cannotReopen
+                          ? `Mark dependent tasks incomplete first: ${completedDependents.map((dependent) => dependent.title).join(", ")}`
+                          : completedBeforePrerequisites
+                            ? `Mark incomplete; prerequisites are unfinished: ${unmetDependencyTasks.map((dependency) => dependency.title).join(", ")}`
+                            : `${task.status === "done" ? "Mark incomplete" : "Mark complete"}: ${task.title}`}
+                      aria-pressed={task.status === "done"}
+                      disabled={blocked || cannotReopen}
+                      onClick={() => updateTask(task.id, (current) => ({ ...current, status: current.status === "done" ? "todo" : "done" }))}
+                    >
+                      {task.status === "done" && <Check size={13} />}
+                    </button>
+                    <div className="timeline-copy">
+                      {editing ? <>
+                        <input aria-label={`Task ${index + 1}`} value={task.title} onChange={(event) => updateTask(task.id, (current) => ({ ...current, title: event.target.value }))} maxLength={120} />
+                        <input aria-label={`Task ${index + 1} timing`} value={task.timing} onChange={(event) => updateTask(task.id, (current) => ({ ...current, timing: event.target.value }))} maxLength={80} />
+                        <div className="task-meta-edit">
+                          <label>Owner<input aria-label={`Task ${index + 1} owner`} value={task.ownerLabel} onChange={(event) => updateTask(task.id, (current) => ({ ...current, ownerLabel: event.target.value }))} maxLength={80} /></label>
+                          <label>Due date<input aria-label={`Task ${index + 1} due date`} type="date" value={task.dueDate ?? ""} onChange={(event) => updateTask(task.id, (current) => ({ ...current, dueDate: event.target.value || null }))} /></label>
+                          <label>Session / function<select aria-label={`Task ${index + 1} session`} value={task.sessionId ?? ""} onChange={(event) => updateTask(task.id, (current) => ({ ...current, sessionId: event.target.value || null }))}><option value="">Shared / whole event</option>{submittedBrief.sessions.map((session) => <option value={session.id} key={session.id}>{session.name}</option>)}</select></label>
+                        </div>
+                        <fieldset className="task-dependency-edit">
+                          <legend>Depends on</legend>
+                          {activePlan.tasks.filter((candidate) => candidate.id !== task.id).map((candidate) => {
+                            const checked = task.dependencyIds.includes(candidate.id);
+                            const maySelect = checked || (
+                              canAddTaskDependency(activePlan.tasks, task.id, candidate.id)
+                              && (task.status !== "done" || candidate.status === "done")
+                            );
+                            return (
+                              <label key={candidate.id} title={!maySelect && task.status === "done" ? "Mark this task incomplete before adding an unfinished prerequisite." : undefined}>
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  disabled={!maySelect}
+                                  onChange={(event) => updateTask(task.id, (current) => ({
+                                    ...current,
+                                    dependencyIds: event.target.checked
+                                      ? [...current.dependencyIds, candidate.id]
+                                      : current.dependencyIds.filter((dependencyId) => dependencyId !== candidate.id),
+                                  }))}
+                                />
+                                <span>{candidate.title}{candidate.status === "done" ? " · done" : ""}</span>
+                              </label>
+                            );
+                          })}
+                          <small>Complete prerequisites before this task. Choices that create a cycle or add an unfinished prerequisite to a completed task are unavailable.</small>
+                        </fieldset>
+                      </> : <>
+                        <strong>{task.title}</strong>
+                        <span><CalendarDays size={13} />{task.dueDate || task.timing} · {task.ownerLabel} · {sessionScopeLabel(submittedBrief.sessions, task.sessionId)}</span>
+                        {dependencyTasks.length > 0 && <span className="task-dependency-summary">Depends on: {dependencyTasks.map((dependency) => dependency.title).join(", ")}</span>}
+                      </>}
+                      {blocked && <span className="task-blocked">Waiting on: {unmetDependencyTasks.map((dependency) => dependency.title).join(", ")}</span>}
+                      {completedBeforePrerequisites && <span className="task-blocked">Marked complete before prerequisites: {unmetDependencyTasks.map((dependency) => dependency.title).join(", ")}</span>}
+                      {cannotReopen && <span className="task-blocked">Mark incomplete first: {completedDependents.map((dependent) => dependent.title).join(", ")}</span>}
+                      {scheduleConflicts.get(task.id)?.map((conflict) => <span className="task-schedule-warning" key={conflict}>Schedule check: {conflict}</span>)}
+                    </div>
+                    <span className={`priority priority-${task.priority}`}>{task.priority}</span>
+                  </div>
+                );
+              })}
+            </div>
 
             <section className="costs-section" aria-labelledby="cost-heading"><div className="section-heading compact-heading"><div><span className="section-label">KNOWN, QUOTED &amp; STILL TO CHECK</span><h3 id="cost-heading">Cost register</h3></div><span className="soft-icon"><CircleCheck size={16} /></span></div>
-              {budgetHealth ? <div className={`budget-health health-${budgetHealth.state}`}><div><strong>{budgetHealth.state === "within_cap" ? "Recorded costs plus reserve fit the cap" : budgetHealth.state === "over_cap" ? "Recorded costs plus reserve exceed the cap" : budgetHealth.state === "range_crosses_cap" ? "Cost range crosses the cap" : activePlan.budget.reviewComplete ? "Review mandatory costs and fees" : "Budget review is still open"}</strong><small>{budgetHealth.unresolvedCount} unpriced · {budgetHealth.unresolvedMandatoryCount} mandatory and unpriced · {budgetHealth.unresolvedMandatoryFeeCount} mandatory fee amounts unresolved</small></div><div className="health-number">{moneyRange(budgetHealth.forecastWithReserveMinor, budgetHealth.forecastWithReserveMaxMinor, currency)}<small>forecast including reserve</small></div></div> : <div className="budget-health health-unknown"><strong>Fix invalid plan fields to recalculate the budget.</strong></div>}
+              {budgetHealth ? <div className={`budget-health health-${budgetHealth.state}`}><div><strong>{budgetHealth.state === "within_cap" ? "Recorded costs plus reserve fit the cap" : budgetHealth.state === "over_cap" ? "Recorded costs plus reserve exceed the cap" : budgetHealth.state === "range_crosses_cap" ? "Cost range crosses the cap" : activePlan.budget.reviewComplete ? "Review mandatory costs and fees" : "Budget review is still open"}</strong><small>{budgetHealth.unresolvedCount} unpriced · {budgetHealth.unresolvedMandatoryCount} mandatory and unpriced · {budgetHealth.unresolvedMandatoryChargeCount} mandatory fee/tax reviews unresolved</small></div><div className="health-number">{moneyRange(budgetHealth.forecastWithReserveMinor, budgetHealth.forecastWithReserveMaxMinor, currency)}<small>forecast including reserve</small></div></div> : <div className="budget-health health-unknown"><strong>Fix invalid plan fields to recalculate the budget.</strong></div>}
               {budgetHealth && budgetHealth.state === "over_cap" && <div className="form-error" role="alert"><CircleAlert size={16} /><span>This recorded forecast is above the cap. Reduce costs or revise the cap before treating the plan as feasible.</span></div>}
               {budgetHealth?.state === "range_crosses_cap" && <div className="form-error" role="alert"><CircleAlert size={16} /><span>The upper forecast exceeds the cap; this range cannot be treated as affordable.</span></div>}
               <div className="cost-rollup"><span>Cap <strong>{formatMoney(activePlan.budget.capMinor, currency)}</strong></span><span>Known costs <strong>{moneyRange(budgetHealth?.knownCostsMinor ?? 0, budgetHealth?.knownCostsMaxMinor ?? 0, currency)}</strong></span><span>Reserve <strong>{formatMoney(budgetHealth?.reserveMinor ?? 0, currency)}</strong></span><span>Paid <strong>{formatMoney(budgetHealth?.paidMinor ?? 0, currency)}</strong></span><span>Committed outstanding <strong>{formatMoney(budgetHealth?.outstandingCommittedMinor ?? 0, currency)}</strong></span></div>
               <div className="cost-list">{activePlan.budget.items.map((cost) => <article className="cost-item" key={cost.id}><div className="cost-item-head"><div><strong>{cost.label}</strong><small>{CATEGORY_LABELS[cost.category]} · {sessionScopeLabel(submittedBrief.sessions, cost.sessionId)} · {costEvidenceSummary(cost, currency, expectedGuestsForCostItem(activePlan, cost))}</small></div>{editing && <button className="icon-button" type="button" onClick={() => removeCost(cost.id)} aria-label={`Remove ${cost.label}`}><Trash2 size={15} /></button>}</div>
-                {editing ? <div className="cost-edit-grid"><label>Line label<input value={cost.label} maxLength={100} onChange={(event) => updateCost(cost.id, (current) => ({ ...current, label: event.target.value }))} /></label><label>Category<select value={cost.category} onChange={(event) => updateCost(cost.id, (current) => ({ ...current, category: event.target.value as CostItem["category"] }))}>{BUDGET_CATEGORIES.map((category) => <option key={category} value={category}>{CATEGORY_LABELS[category]}</option>)}</select></label><label>Applies to<select value={cost.sessionId ?? ""} onChange={(event) => { const sessionId = event.target.value || null; const candidate = { ...cost, sessionId }; const total = forecastCostItem(candidate, expectedGuestsForCostItem(activePlan, candidate)).lowerMinor; if (total !== null && cost.paidMinor > total) { setCostMessage("This session has a smaller commitment total than the amount already paid."); return; } setCostMessage(""); updateCost(cost.id, (current) => ({ ...current, sessionId })); }}><option value="">Shared / whole event</option>{submittedBrief.sessions.map((session) => <option value={session.id} key={session.id}>{session.name}</option>)}</select></label><label>Price basis<select value={cost.pricingModel} onChange={(event) => { const pricingModel = event.target.value as CostItem["pricingModel"]; const candidate = { ...cost, pricingModel }; const total = forecastCostItem(candidate, expectedGuestsForCostItem(activePlan, candidate)).lowerMinor; if (total !== null && cost.paidMinor > total) { setCostMessage("The new price basis would put paid amount above the commitment."); return; } setCostMessage(""); updateCost(cost.id, (current) => ({ ...current, pricingModel })); }}><option value="fixed">Fixed total</option><option value="per_guest">Per guest</option></select></label><label>{cost.pricingModel === "per_guest" ? "Rate per guest (" + currency + ")" : "Lower amount (" + currency + ")"}<input inputMode="decimal" value={amountDrafts[cost.id] ?? amountInput(cost.amountMinor, currency)} placeholder="Unknown" onChange={(event) => setAmountDrafts((current) => ({ ...current, [cost.id]: event.target.value }))} onBlur={(event) => updateAmountOnBlur(cost, event.target.value)} /></label><label>Upper amount / rate ({currency})<input inputMode="decimal" value={amountDrafts[cost.id + ":max"] ?? amountInput(cost.amountMaxMinor, currency)} placeholder="Same as lower" disabled={cost.evidence === "committed"} onChange={(event) => setAmountDrafts((current) => ({ ...current, [cost.id + ":max"]: event.target.value }))} onBlur={(event) => updateMaxAmountOnBlur(cost, event.target.value)} /></label><label>Evidence<select value={cost.evidence} onChange={(event) => { const evidence = event.target.value as CostItem["evidence"]; if (evidence !== "committed" && cost.payments.length > 0) { setCostMessage("Remove recorded payments before changing this cost from committed."); return; } if (evidence !== "unpriced" && cost.amountMinor === null) { setCostMessage("Enter an amount before marking this cost as an estimate, quote, or commitment."); return; } if (evidence === "committed" && cost.amountMaxMinor !== null && cost.amountMaxMinor !== cost.amountMinor) { setCostMessage("Clear the upper amount before recording an exact commitment."); return; } setCostMessage(""); updateCost(cost.id, (current) => ({ ...current, evidence, ...(evidence === "unpriced" ? { amountMinor: null, amountMaxMinor: null, paidMinor: 0 } : {}) })); }}><option value="unpriced">Unpriced</option><option value="estimate">Estimate</option><option value="quote">Quote</option><option value="committed">Committed</option></select></label><label className="checkbox-field"><input type="checkbox" checked={cost.mandatory} onChange={(event) => updateCost(cost.id, (current) => ({ ...current, mandatory: event.target.checked }))} /> Mandatory to the event</label><label>Quote valid until<input type="date" value={cost.validUntil ?? ""} onChange={(event) => updateCost(cost.id, (current) => ({ ...current, validUntil: event.target.value || null }))} /></label><label>Minimum guests<input type="number" min={1} max={10000} value={cost.minimumGuestCount ?? ""} onChange={(event) => updateCost(cost.id, (current) => ({ ...current, minimumGuestCount: event.target.value ? Number(event.target.value) : null }))} /></label><label>Fees status<select value={cost.feesIncluded === null ? "unknown" : cost.feesIncluded ? "included" : "excluded"} onChange={(event) => updateCost(cost.id, (current) => ({ ...current, feesIncluded: event.target.value === "unknown" ? null : event.target.value === "included" }))}><option value="unknown">Unknown</option><option value="included">Included</option><option value="excluded">Excluded / extra</option></select></label><label className="field-wide">Source / exclusion notes<textarea value={cost.sourceNote} maxLength={300} onChange={(event) => updateCost(cost.id, (current) => ({ ...current, sourceNote: event.target.value }))} placeholder="Who provided this and what is excluded?" /></label></div> : <div className="cost-evidence"><span>{cost.sourceNote || "No source recorded."}</span>{cost.validUntil && <small>Valid until {cost.validUntil}</small>}{cost.minimumGuestCount && <small>Minimum guests: {cost.minimumGuestCount}</small>}{cost.feesIncluded === null ? <small>Fees unknown</small> : cost.feesIncluded ? <small>Fees included</small> : <small>Fees excluded or extra</small>}</div>}<PaymentHistoryPanel cost={cost} currency={currency} editing={editing} draft={paymentDrafts[cost.id] ?? { amount: "", paidAt: "", note: "" }} onDraftChange={(field, value) => updatePaymentDraft(cost.id, field, value)} onAdd={() => addPayment(cost)} onRemove={(paymentId) => removePayment(cost, paymentId)} /></article>)}</div>
+                {editing ? <div className="cost-edit-grid"><label>Line label<input value={cost.label} maxLength={100} onChange={(event) => updateCost(cost.id, (current) => ({ ...current, label: event.target.value }))} /></label><label>Category<select value={cost.category} onChange={(event) => updateCost(cost.id, (current) => ({ ...current, category: event.target.value as CostItem["category"] }))}>{BUDGET_CATEGORIES.map((category) => <option key={category} value={category}>{CATEGORY_LABELS[category]}</option>)}</select></label><label>Applies to<select value={cost.sessionId ?? ""} onChange={(event) => { const sessionId = event.target.value || null; updateCostProjection(cost, { sessionId }, "This session has a smaller commitment total than the amount already paid."); }}><option value="">Shared / whole event</option>{submittedBrief.sessions.map((session) => <option value={session.id} key={session.id}>{session.name}</option>)}</select></label><label>Price basis<select value={cost.pricingModel} onChange={(event) => { const pricingModel = event.target.value as CostItem["pricingModel"]; updateCostProjection(cost, { pricingModel }, "The new price basis would put paid amount above the commitment."); }}><option value="fixed">Fixed total</option><option value="per_guest">Per guest</option></select></label><label>{cost.pricingModel === "per_guest" ? "Rate per guest (" + currency + ")" : "Lower amount (" + currency + ")"}<input inputMode="decimal" value={amountDrafts[cost.id] ?? amountInput(cost.amountMinor, currency)} placeholder="Unknown" onChange={(event) => setAmountDrafts((current) => ({ ...current, [cost.id]: event.target.value }))} onBlur={(event) => updateAmountOnBlur(cost, event.target.value)} /></label><label>Upper amount / rate ({currency})<input inputMode="decimal" value={amountDrafts[cost.id + ":max"] ?? amountInput(cost.amountMaxMinor, currency)} placeholder="Same as lower" disabled={cost.evidence === "committed"} onChange={(event) => setAmountDrafts((current) => ({ ...current, [cost.id + ":max"]: event.target.value }))} onBlur={(event) => updateMaxAmountOnBlur(cost, event.target.value)} /></label><label>Evidence<select value={cost.evidence} onChange={(event) => { const evidence = event.target.value as CostItem["evidence"]; if (evidence !== "committed" && cost.payments.length > 0) { setCostMessage("Remove recorded payments before changing this cost from committed."); return; } if (evidence !== "unpriced" && cost.amountMinor === null) { setCostMessage("Enter an amount before marking this cost as an estimate, quote, or commitment."); return; } if (evidence === "committed" && cost.amountMaxMinor !== null && cost.amountMaxMinor !== cost.amountMinor) { setCostMessage("Clear the upper amount before recording an exact commitment."); return; } if (evidence === "committed" && cost.adjustments.some((adjustment) => adjustment.amountMaxMinor !== null && adjustment.amountMaxMinor !== adjustment.amountMinor)) { setCostMessage("Use exact sourced adjustment amounts before recording a commitment."); return; } setCostMessage(""); updateCost(cost.id, (current) => ({ ...current, evidence, chargesReviewed: false, ...(evidence === "unpriced" ? { amountMinor: null, amountMaxMinor: null, paidMinor: 0 } : {}) })); }}><option value="unpriced">Unpriced</option><option value="estimate">Estimate</option><option value="quote">Quote</option><option value="committed">Committed</option></select></label><label className="checkbox-field"><input type="checkbox" checked={cost.mandatory} onChange={(event) => updateCost(cost.id, (current) => ({ ...current, mandatory: event.target.checked }))} /> Mandatory to the event</label><label>Quote valid until<input type="date" value={cost.validUntil ?? ""} onChange={(event) => updateCost(cost.id, (current) => ({ ...current, validUntil: event.target.value || null }))} /></label><label>Minimum guests<input type="number" min={1} max={10000} value={cost.minimumGuestCount ?? ""} onChange={(event) => updateCostProjection(cost, { minimumGuestCount: event.target.value ? Number(event.target.value) : null }, "The minimum guest count would put paid amount above the commitment.")} /></label><label className="field-wide">Source / exclusion notes<textarea value={cost.sourceNote} maxLength={300} onChange={(event) => updateCost(cost.id, (current) => ({ ...current, sourceNote: event.target.value, chargesReviewed: false }))} placeholder="Who provided this and what is excluded?" /></label></div> : <div className="cost-evidence"><span>{cost.sourceNote || "No source recorded."}</span>{cost.validUntil && <small>Valid until {cost.validUntil}</small>}{cost.minimumGuestCount && <small>Minimum guests: {cost.minimumGuestCount}</small>}</div>}<CostAdjustmentsEditor cost={cost} expectedGuests={expectedGuestsForCostItem(activePlan, cost)} currency={currency} editing={editing} onSave={(adjustmentId, draft) => saveCostAdjustment(cost.id, adjustmentId, draft)} onRemove={(adjustmentId) => removeCostAdjustment(cost.id, adjustmentId)} onChargeStatus={(field, value) => updateChargeStatus(cost.id, field, value)} onReview={(checked) => updateChargeReview(cost.id, checked)} /><PaymentHistoryPanel cost={cost} currency={currency} editing={editing} draft={paymentDrafts[cost.id] ?? { amount: "", paidAt: "", note: "" }} onDraftChange={(field, value) => updatePaymentDraft(cost.id, field, value)} onAdd={() => addPayment(cost)} onRemove={(paymentId) => removePayment(cost, paymentId)} /></article>)}</div>
               <form className="add-cost-form" onSubmit={addCost}><h4>Add a cost or quote</h4><div className="add-cost-grid"><label>Label<input required minLength={2} maxLength={100} value={costDraft.label} onChange={(event) => setCostDraft((current) => ({ ...current, label: event.target.value }))} placeholder="e.g. Community hall" /></label><label>Category<select value={costDraft.category} onChange={(event) => setCostDraft((current) => ({ ...current, category: event.target.value as CostItem["category"] }))}>{BUDGET_CATEGORIES.map((category) => <option key={category} value={category}>{CATEGORY_LABELS[category]}</option>)}</select></label><label>Applies to<select value={costDraft.sessionId ?? ""} onChange={(event) => setCostDraft((current) => ({ ...current, sessionId: event.target.value || null }))}><option value="">Shared / whole event</option>{submittedBrief.sessions.map((session) => <option value={session.id} key={session.id}>{session.name}</option>)}</select></label><label>Price basis<select value={costDraft.pricingModel} onChange={(event) => setCostDraft((current) => ({ ...current, pricingModel: event.target.value as CostItem["pricingModel"] }))}><option value="fixed">Fixed total</option><option value="per_guest">Per guest</option></select></label><label>Evidence<select value={costDraft.evidence} onChange={(event) => { const evidence = event.target.value as CostItem["evidence"]; if (evidence === "committed" && costDraft.maxAmount.trim()) { try { if (parseBudgetMinor(costDraft.maxAmount, currency) !== parseBudgetMinor(costDraft.amount, currency)) throw new Error(); } catch { setCostMessage("Clear the upper amount before choosing an exact commitment."); return; } } setCostMessage(""); setCostDraft((current) => ({ ...current, evidence })); }}><option value="unpriced">Unpriced</option><option value="estimate">Estimate</option><option value="quote">Quote</option><option value="committed">Committed</option></select></label><label>Lower amount / rate ({currency})<input inputMode="decimal" value={costDraft.amount} disabled={costDraft.evidence === "unpriced"} onChange={(event) => setCostDraft((current) => ({ ...current, amount: event.target.value }))} placeholder={costDraft.evidence === "unpriced" ? "No amount yet" : "e.g. 1200"} /></label><label>Upper amount / rate ({currency})<input inputMode="decimal" value={costDraft.maxAmount} disabled={costDraft.evidence === "unpriced" || costDraft.evidence === "committed"} onChange={(event) => setCostDraft((current) => ({ ...current, maxAmount: event.target.value }))} placeholder="Same as lower" /></label><label className="checkbox-field"><input type="checkbox" checked={costDraft.mandatory} onChange={(event) => setCostDraft((current) => ({ ...current, mandatory: event.target.checked }))} /> Mandatory</label><button type="submit"><Plus size={15} /> Add cost</button></div></form>
               <label className="review-checkbox"><input type="checkbox" checked={activePlan.budget.reviewComplete} onChange={(event) => updateActivePlan((current) => ({ ...current, budget: { ...current.budget, reviewComplete: event.target.checked } }))} /> I reviewed the recorded costs and know what remains unknown.</label>
               {costMessage && <div className="form-error cost-form-message" role="status"><CircleAlert size={16} /><span>{costMessage}</span></div>}

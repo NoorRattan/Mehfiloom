@@ -136,8 +136,27 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,
 .app-shell .session-attendance-row small{color:#7e8378;font-size:8px}
 .app-shell .session-attendance-row input{width:105px;min-height:32px;padding:6px 8px;border:1px solid #d8dccf;border-radius:7px;background:#fffefa;color:#34483a;font-size:10px}
 .app-shell .task-meta-edit select{width:100%;min-width:0;min-height:38px;padding:7px 8px;border:1px solid #d8dccf;border-radius:7px;background:#fffefa;color:#34483a;font-size:10px}
+.app-shell .timeline-copy .task-dependency-edit{gap:7px 12px;margin-top:3px;padding:9px;border:1px solid #e5e1d7;border-radius:7px;background:#faf9f3}
+.app-shell .task-dependency-edit legend{padding:0 4px;color:#405042;font-size:10px;font-weight:700}
+.app-shell .task-dependency-edit label{display:flex;align-items:center;gap:6px;color:#4f5d4e;font-size:10px;line-height:1.4}
+.app-shell .timeline-copy .task-dependency-edit input[type="checkbox"]{width:15px;min-width:15px;min-height:15px;margin:0;padding:0;border:1px solid #9ba990;border-radius:3px;background:#fffefa;accent-color:#426c48}
+.app-shell .task-dependency-edit small{color:#53604e;font-size:10px;line-height:1.5}
+.app-shell .timeline-copy .task-blocked,.app-shell .timeline-copy .task-schedule-warning{padding:6px 9px;border-radius:4px;font-size:10px;line-height:1.5}
 @media(max-width:700px){.app-shell .session-attendance{grid-template-columns:1fr;gap:10px}}
 @media(max-width:560px){.app-shell .session-row{grid-template-columns:1fr 1fr 38px}.app-shell .session-row label:first-child{grid-column:1/-1}.app-shell .session-remove{grid-column:3;grid-row:2}.app-shell .session-attendance-row{align-items:flex-start;flex-direction:column}.app-shell .session-attendance-row>span:last-child{width:100%}.app-shell .session-attendance-row input{width:100%}.app-shell .session-builder-heading{align-items:flex-start;flex-direction:column}}
+.app-shell .cost-adjustments{gap:11px;margin-top:13px;padding:13px;border-color:#dfe4d7;border-radius:11px;background:#f7f8f0}
+.app-shell .adjustment-heading strong{font-size:12px}
+.app-shell .adjustment-heading small,.app-shell .adjustment-empty,.app-shell .adjustment-review-state,.app-shell .adjustment-formula{font-size:10px}
+.app-shell .adjustment-status-grid label,.app-shell .adjustment-status-grid label>span{font-size:10px}
+.app-shell .adjustment-status-grid select,.app-shell .adjustment-status-grid label>span{min-height:38px;font-size:11px}
+.app-shell .adjustment-rollup{gap:7px 13px;padding:10px}
+.app-shell .adjustment-rollup span,.app-shell .adjustment-rollup strong{font-size:10px}
+.app-shell .adjustment-read-row strong{font-size:10px}
+.app-shell .adjustment-read-row small{font-size:9px}
+.app-shell .adjustment-fields label,.app-shell .adjustment-add-form h4{font-size:10px}
+.app-shell .adjustment-fields input,.app-shell .adjustment-fields select{min-height:38px;padding:7px 9px;border-radius:8px;font-size:11px}
+.app-shell .adjustment-row-actions button,.app-shell .adjustment-add-form>button{min-height:36px;padding:6px 11px;border-radius:8px;font-size:10px}
+@media(max-width:560px){.app-shell .adjustment-fields{grid-template-columns:1fr}.app-shell .adjustment-fields .adjustment-source{grid-column:auto}.app-shell .adjustment-status-grid{grid-template-columns:1fr}}
 .app-shell .payment-history{display:grid;gap:8px;margin-top:12px;padding:12px;border:1px solid #e7e2d7;border-radius:8px;background:#fffdf9}
 .app-shell .payment-history-heading,.app-shell .payment-history li{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .app-shell .payment-history-heading strong{color:#405042;font-size:10px}

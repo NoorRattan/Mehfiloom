@@ -2,10 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   LEGACY_WORKSPACE_STORAGE_KEY,
+  OLDEST_WORKSPACE_STORAGE_KEY,
   OLDER_WORKSPACE_STORAGE_KEY,
   WORKSPACE_STORAGE_KEY,
+  WORKSPACE_VERSION,
   addCostPayment,
+  canAddTaskDependency,
+  canMarkTaskDone,
+  canReopenTask,
   calculateBudgetHealth,
+  costAdjustmentSchema,
   createSavedPlan,
   expectedGuestsForCostItem,
   forecastCostItem,
@@ -16,8 +22,9 @@ import {
   savedPlanSchema,
   serializePlanDocument,
   serializeWorkspace,
+  taskScheduleConflicts,
 } from "../lib/plan-store.ts";
-import { EXAMPLE_BRIEF, EXAMPLE_PROPOSAL } from "../lib/planner.ts";
+import { EXAMPLE_BRIEF, EXAMPLE_PROPOSAL, parseBudgetMinor } from "../lib/planner.ts";
 import {
   clearWorkspaceStorage,
   loadWorkspaceFromStorage,
@@ -31,12 +38,88 @@ function makePlan(id = "plan-one", eventName = EXAMPLE_BRIEF.eventName) {
   return createSavedPlan(brief, brief, EXAMPLE_PROPOSAL, id, CREATED_AT);
 }
 
+test("task dependency editing prevents self-links, duplicates, and direct or transitive cycles", () => {
+  const plan = makePlan();
+  const tasks = plan.tasks.slice(0, 4).map((task) => ({ ...task, dependencyIds: [] }));
+  tasks[1] = { ...tasks[1], dependencyIds: [tasks[0].id] };
+  tasks[2] = { ...tasks[2], dependencyIds: [tasks[1].id] };
+
+  assert.equal(canAddTaskDependency(tasks, tasks[0].id, tasks[0].id), false);
+  assert.equal(canAddTaskDependency(tasks, tasks[0].id, "missing-task"), false);
+  assert.equal(canAddTaskDependency(tasks, tasks[0].id, tasks[1].id), false, "a direct cycle is rejected");
+  assert.equal(canAddTaskDependency(tasks, tasks[0].id, tasks[2].id), false, "a transitive cycle is rejected");
+  assert.equal(canAddTaskDependency(tasks, tasks[1].id, tasks[0].id), false, "an existing link is not added twice");
+  assert.equal(canAddTaskDependency(tasks, tasks[2].id, plan.tasks[3].id), true, "an independent prerequisite is allowed");
+});
+
+test("saved plans reject duplicate and circular task prerequisites", () => {
+  const plan = makePlan();
+  const [first, second, ...rest] = plan.tasks;
+  const duplicate = {
+    ...plan,
+    tasks: [{ ...first, dependencyIds: [second.id, second.id] }, second, ...rest],
+  };
+  const circular = {
+    ...plan,
+    tasks: [
+      { ...first, dependencyIds: [second.id] },
+      { ...second, dependencyIds: [first.id] },
+      ...rest,
+    ],
+  };
+  const missing = {
+    ...plan,
+    tasks: [{ ...first, dependencyIds: ["missing-task"] }, second, ...rest],
+  };
+
+  assert.equal(savedPlanSchema.safeParse(duplicate).success, false);
+  assert.equal(savedPlanSchema.safeParse(circular).success, false);
+  assert.equal(savedPlanSchema.safeParse(missing).success, false);
+  assert.throws(() => savedPlanSchema.parse(circular), /cannot contain a cycle/);
+});
+
+test("task completion follows prerequisites in both directions", () => {
+  const plan = makePlan();
+  const [first, second, third] = plan.tasks;
+  let tasks = [
+    { ...first, status: "todo", dependencyIds: [] },
+    { ...second, status: "todo", dependencyIds: [first.id] },
+    { ...third, status: "todo", dependencyIds: [second.id] },
+  ];
+
+  assert.equal(canMarkTaskDone(tasks[1], tasks), false);
+  tasks = [{ ...tasks[0], status: "done" }, tasks[1], tasks[2]];
+  assert.equal(canMarkTaskDone(tasks[1], tasks), true);
+  tasks = [tasks[0], { ...tasks[1], status: "done" }, { ...tasks[2], status: "done" }];
+  assert.equal(canReopenTask(tasks[0], tasks), false);
+  assert.equal(canReopenTask(tasks[1], tasks), false);
+  tasks = [tasks[0], tasks[1], { ...tasks[2], status: "todo" }];
+  assert.equal(canReopenTask(tasks[1], tasks), true);
+});
+
+test("task schedule reports prerequisite and event-date conflicts", () => {
+  const plan = makePlan();
+  const [prerequisite, dependent, afterEvent] = plan.tasks;
+  const tasks = [
+    { ...prerequisite, dueDate: "2026-12-12", dependencyIds: [] },
+    { ...dependent, dueDate: "2026-12-10", status: "done", dependencyIds: [prerequisite.id] },
+    { ...afterEvent, dueDate: "2026-12-22", dependencyIds: [] },
+    { ...plan.tasks[3], dueDate: "2026-12-09", status: "todo", dependencyIds: [] },
+  ];
+
+  const conflicts = taskScheduleConflicts(tasks, "2026-12-20", "2026-12-11");
+  assert.deepEqual(conflicts.get(dependent.id), [`${prerequisite.title} is due 2026-12-12, after this task.`]);
+  assert.deepEqual(conflicts.get(afterEvent.id), ["This task is due 2026-12-22, after the event date 2026-12-20."]);
+  assert.deepEqual(conflicts.get(tasks[3].id), ["This task was due 2026-12-09 and is still open."]);
+  assert.equal(taskScheduleConflicts(tasks, "", "2026-12-11").has(afterEvent.id), false, "a task date cannot be compared with an unknown event date");
+});
+
 test("versioned workspace save and reload preserves multiple complete plans", () => {
   const first = makePlan("plan-one", "Synthetic wedding");
   const second = makePlan("plan-two", "Synthetic community gathering");
   const workspace = {
     format: "mehfiloom-workspace",
-    schemaVersion: 3,
+    schemaVersion: WORKSPACE_VERSION,
     activePlanId: second.id,
     plans: [first, second],
   };
@@ -44,7 +127,7 @@ test("versioned workspace save and reload preserves multiple complete plans", ()
   const reloaded = parseWorkspaceJson(serializeWorkspace(workspace));
 
   assert.equal(reloaded.plans.length, 2);
-  assert.equal(reloaded.schemaVersion, 3);
+  assert.equal(reloaded.schemaVersion, WORKSPACE_VERSION);
   assert.equal(reloaded.activePlanId, second.id);
   assert.equal(reloaded.plans[0].draftBrief.eventName, "Synthetic wedding");
   assert.deepEqual(reloaded.plans[1].vendors, second.vendors);
@@ -55,7 +138,7 @@ test("workspace persistence surfaces denied reads and quota failures", () => {
   const plan = makePlan();
   const workspace = {
     format: "mehfiloom-workspace",
-    schemaVersion: 3,
+    schemaVersion: WORKSPACE_VERSION,
     activePlanId: plan.id,
     plans: [plan],
   };
@@ -97,10 +180,10 @@ test("legacy v1 browser storage migrates saved totals into dated-payment history
     activePlanId: plan.id,
     plans: [plan],
   };
-  const values = new Map([[OLDER_WORKSPACE_STORAGE_KEY, JSON.stringify(legacyWorkspace)]]);
+  const values = new Map([[OLDEST_WORKSPACE_STORAGE_KEY, JSON.stringify(legacyWorkspace)]]);
   const loaded = loadWorkspaceFromStorage({ getItem(key) { return values.get(key) ?? null; } });
 
-  assert.equal(loaded.schemaVersion, 3);
+  assert.equal(loaded.schemaVersion, WORKSPACE_VERSION);
   assert.deepEqual(loaded.plans[0].planBrief.sessions, []);
   assert.deepEqual(loaded.plans[0].sessionAttendance, []);
   assert.ok(loaded.plans[0].tasks.every((task) => task.sessionId === null));
@@ -128,10 +211,10 @@ test("legacy v2 storage key and plan records migrate without losing payment tota
     activePlanId: plan.id,
     plans: [plan],
   };
-  const values = new Map([[LEGACY_WORKSPACE_STORAGE_KEY, JSON.stringify(legacyWorkspace)]]);
+  const values = new Map([[OLDER_WORKSPACE_STORAGE_KEY, JSON.stringify(legacyWorkspace)]]);
   const loaded = loadWorkspaceFromStorage({ getItem(key) { return values.get(key) ?? null; } });
 
-  assert.equal(loaded.schemaVersion, 3);
+  assert.equal(loaded.schemaVersion, WORKSPACE_VERSION);
   assert.equal(loaded.plans[0].budget.items[0].paidMinor, 12_500);
   assert.deepEqual(loaded.plans[0].budget.items[0].payments, [{
     id: "legacy-payment-1",
@@ -139,6 +222,27 @@ test("legacy v2 storage key and plan records migrate without losing payment tota
     paidAt: null,
     note: "Existing total; payment date not recorded.",
   }]);
+});
+
+test("legacy v3 storage migrates fee metadata to sourced amount defaults", () => {
+  const plan = structuredClone(makePlan("legacy-v3-plan"));
+  plan.schemaVersion = 3;
+  plan.budget.items.forEach((item) => {
+    delete item.taxesIncluded;
+    delete item.chargesReviewed;
+    delete item.adjustments;
+  });
+  const legacyWorkspace = {
+    format: "mehfiloom-workspace",
+    schemaVersion: 3,
+    activePlanId: plan.id,
+    plans: [plan],
+  };
+  const values = new Map([[LEGACY_WORKSPACE_STORAGE_KEY, JSON.stringify(legacyWorkspace)]]);
+  const loaded = loadWorkspaceFromStorage({ getItem(key) { return values.get(key) ?? null; } });
+
+  assert.equal(loaded.schemaVersion, WORKSPACE_VERSION);
+  assert.ok(loaded.plans[0].budget.items.every((item) => item.taxesIncluded === null && item.chargesReviewed === false && item.adjustments.length === 0));
 });
 
 test("plan JSON export/import round-trips and re-identification preserves internal links", () => {
@@ -221,6 +325,98 @@ test("session-scoped per-guest forecasts use only that session; fixed and shared
   assert.equal(forecastCostItem(shared, expectedGuestsForCostItem(plan, shared)).lowerMinor, 7500);
   assert.equal(forecastCostItem(fixed, expectedGuestsForCostItem(plan, fixed)).lowerMinor, 5000);
   assert.equal(calculateBudgetHealth(plan).knownCostsMinor, 32500);
+});
+
+test("sourced adjustments use exact minor-unit ranges and billed guest counts", () => {
+  assert.equal(parseBudgetMinor("0.00", "USD", true), 0);
+  assert.equal(parseBudgetMinor("0", "JPY", true), 0);
+  assert.equal(parseBudgetMinor("0.01", "USD", true), 1);
+  assert.throws(() => parseBudgetMinor("0.00", "USD"), /positive budget/);
+  assert.throws(() => parseBudgetMinor("-1.00", "USD", true), /amount with up to/);
+  assert.throws(() => parseBudgetMinor("999999999999.99", "USD", true), /supported planning range/);
+
+  const seed = makePlan("adjusted-cost-plan");
+  const cost = {
+    ...seed.budget.items[0],
+    amountMinor: 10_000,
+    amountMaxMinor: 12_000,
+    evidence: "quote",
+    mandatory: false,
+    feesIncluded: false,
+    taxesIncluded: false,
+    sourceNote: "Hall quote Q-17",
+    adjustments: [
+      { id: "discount-1", kind: "discount", label: "Early booking", pricingModel: "fixed", amountMinor: 500, amountMaxMinor: 700, sourceNote: "Hall quote Q-17" },
+      { id: "fee-1", kind: "fee", label: "Delivery", pricingModel: "per_guest", amountMinor: 100, amountMaxMinor: 200, sourceNote: "Hall quote Q-17" },
+      { id: "tax-1", kind: "tax", label: "Printed tax amount", pricingModel: "fixed", amountMinor: 900, amountMaxMinor: null, sourceNote: "Hall quote Q-17" },
+    ],
+  };
+  assert.equal(costAdjustmentSchema.safeParse({
+    id: "zero-adjustment", kind: "fee", label: "No delivery", pricingModel: "fixed", amountMinor: 0, amountMaxMinor: null, sourceNote: "Written quote says none",
+  }).success, true);
+  assert.equal(costAdjustmentSchema.safeParse({ ...cost.adjustments[0], amountMaxMinor: 400 }).success, false);
+  assert.equal(costAdjustmentSchema.safeParse({ ...cost.adjustments[0], sourceNote: " " }).success, false);
+  assert.equal(savedPlanSchema.safeParse({ ...seed, budget: { ...seed.budget, items: [{ ...cost, chargesReviewed: true, sourceNote: "No quote or local price has been supplied." }] } }).success, false);
+
+  const plan = savedPlanSchema.parse({ ...seed, budget: { ...seed.budget, items: [cost] } });
+  const forecast = forecastCostItem(plan.budget.items[0], 10);
+  assert.equal(forecast.baseLowerMinor, 10_000);
+  assert.equal(forecast.baseUpperMinor, 12_000);
+  assert.equal(forecast.discountLowerMinor, 500);
+  assert.equal(forecast.discountUpperMinor, 700);
+  assert.equal(forecast.feeLowerMinor, 1_000);
+  assert.equal(forecast.feeUpperMinor, 2_000);
+  assert.equal(forecast.taxLowerMinor, 900);
+  assert.equal(forecast.lowerMinor, 11_200);
+  assert.equal(forecast.upperMinor, 14_400);
+
+  const fixedBaseWithPerGuestFee = { ...plan.budget.items[0], adjustments: [cost.adjustments[1]] };
+  assert.equal(forecastCostItem(fixedBaseWithPerGuestFee, 10).feeLowerMinor, 1_000);
+});
+
+test("sourced adjustments reject duplicate, unsupported, and over-commitment totals", () => {
+  const seed = makePlan("invalid-adjustment-plan");
+  const base = seed.budget.items[0];
+  const fee = { id: "fee-line", kind: "fee", label: "Delivery fee", pricingModel: "fixed", amountMinor: 100, amountMaxMinor: null, sourceNote: "Vendor quote V-2" };
+  const tax = { id: "tax-line", kind: "tax", label: "Tax amount", pricingModel: "fixed", amountMinor: 200, amountMaxMinor: null, sourceNote: "Vendor quote V-2" };
+  const discount = { id: "discount-line", kind: "discount", label: "Booking credit", pricingModel: "fixed", amountMinor: 500, amountMaxMinor: null, sourceNote: "Vendor quote V-2" };
+  const validCost = {
+    ...base,
+    amountMinor: 10_000,
+    evidence: "committed",
+    feesIncluded: false,
+    taxesIncluded: false,
+    chargesReviewed: true,
+    sourceNote: "Vendor quote V-2",
+    adjustments: [discount, fee, tax],
+  };
+  const accepted = savedPlanSchema.parse({ ...seed, budget: { ...seed.budget, reviewComplete: true, items: [validCost] } });
+  assert.equal(calculateBudgetHealth(accepted).knownCostsMinor, 9_800);
+  assert.equal(calculateBudgetHealth(accepted).unresolvedMandatoryChargeCount, 0);
+
+  assert.equal(savedPlanSchema.safeParse({
+    ...seed,
+    budget: { ...seed.budget, items: [{ ...validCost, adjustments: [discount, { ...fee, id: discount.id }, tax] }] },
+  }).success, false, "adjustment IDs must be unique within a cost");
+  const overpaidCost = {
+    ...validCost,
+    paidMinor: 9_801,
+    payments: [{ id: "payment-1", amountMinor: 9_801, paidAt: null, note: "Final" }],
+  };
+  assert.equal(savedPlanSchema.safeParse({ ...seed, budget: { ...seed.budget, items: [overpaidCost] } }).success, false);
+  assert.equal(savedPlanSchema.safeParse({ ...seed, budget: { ...seed.budget, items: [{ ...validCost, feesIncluded: true }] } }).success, false);
+  assert.equal(savedPlanSchema.safeParse({ ...seed, budget: { ...seed.budget, items: [{ ...validCost, adjustments: [{ ...discount, amountMinor: 10_001 }] }] } }).success, false);
+  assert.equal(savedPlanSchema.safeParse({ ...seed, budget: { ...seed.budget, items: [{ ...validCost, adjustments: [discount, tax] }] } }).success, false, "a reviewed separate fee needs a sourced amount");
+
+  const overflowBrief = { ...EXAMPLE_BRIEF, guestCount: 10_000 };
+  const overflowSeed = createSavedPlan(overflowBrief, overflowBrief, EXAMPLE_PROPOSAL, "overflow-adjustment-plan", CREATED_AT);
+  const overflowCost = {
+    ...overflowSeed.budget.items[0],
+    amountMinor: 1_000,
+    evidence: "estimate",
+    adjustments: [{ ...fee, pricingModel: "per_guest", amountMinor: 1_000_000_000_000 }],
+  };
+  assert.equal(savedPlanSchema.safeParse({ ...overflowSeed, budget: { ...overflowSeed.budget, items: [overflowCost] } }).success, false);
 });
 
 test("import re-identification keeps session links aligned across briefs, tasks, costs, and attendance", () => {
@@ -359,7 +555,7 @@ test("later payments update paid and outstanding while the commitment forecast s
 
   const roundTrip = parseWorkspaceJson(serializeWorkspace({
     format: "mehfiloom-workspace",
-    schemaVersion: 3,
+    schemaVersion: WORKSPACE_VERSION,
     activePlanId: laterPayment.id,
     plans: [laterPayment],
   }));
@@ -415,6 +611,9 @@ test("per-guest quotes apply the greater of expected and minimum billable attend
     mandatory: true,
     minimumGuestCount: 150,
     feesIncluded: true,
+    taxesIncluded: true,
+    chargesReviewed: true,
+    sourceNote: "Synthetic vendor quote Q-4.",
   };
   const priced = {
     ...plan,
@@ -479,16 +678,16 @@ test("unresolved mandatory fee amounts prevent a green budget status", () => {
     budget: { ...plan.budget, items: [mandatoryCost, ...plan.budget.items.slice(1)], reviewComplete: true },
   };
 
-  assert.equal(calculateBudgetHealth(withUnknownFees).unresolvedMandatoryFeeCount, 1);
+  assert.equal(calculateBudgetHealth(withUnknownFees).unresolvedMandatoryChargeCount, 1);
   assert.equal(calculateBudgetHealth(withUnknownFees).state, "unknown");
   const feesExcluded = calculateBudgetHealth({
     ...withUnknownFees,
     budget: { ...withUnknownFees.budget, items: [{ ...mandatoryCost, feesIncluded: false }, ...withUnknownFees.budget.items.slice(1)] },
   });
-  assert.equal(feesExcluded.unresolvedMandatoryFeeCount, 1);
+  assert.equal(feesExcluded.unresolvedMandatoryChargeCount, 1);
   assert.equal(feesExcluded.state, "unknown", "an excluded fee without a recorded amount is not a complete forecast");
   assert.equal(calculateBudgetHealth({
     ...withUnknownFees,
-    budget: { ...withUnknownFees.budget, items: [{ ...mandatoryCost, feesIncluded: true }, ...withUnknownFees.budget.items.slice(1)] },
+    budget: { ...withUnknownFees.budget, items: [{ ...mandatoryCost, feesIncluded: true, taxesIncluded: true, chargesReviewed: true, sourceNote: "Vendor quote V-9 confirmed both amounts included." }, ...withUnknownFees.budget.items.slice(1)] },
   }).state, "within_cap");
 });

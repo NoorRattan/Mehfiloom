@@ -212,6 +212,8 @@ test("120-to-160 guest revisions recalculate quantity costs and expose the cap b
             validUntil: null,
             minimumGuestCount: null,
             feesIncluded: true,
+            taxesIncluded: true,
+            chargesReviewed: true,
             exclusions: [],
             sourceNote: "Synthetic test fixture; not a market quote.",
           })),

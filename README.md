@@ -2,7 +2,7 @@
 
 **Weave your perfect celebration.**
 
-Mehfiloom is a planning assistant for weddings, birthdays, and community events. It turns a host's brief into a reviewable starting plan with a budget allocation, timeline, vendor questions, personalized ideas, and visible assumptions.
+The selected vertical is **Celebration & Event Planner**. Mehfiloom is a planning assistant for weddings, birthdays, and community events. It turns a host's brief into a reviewable starting plan with a budget allocation, timeline, vendor questions, personalized ideas, and visible assumptions.
 
 ## Current build
 
@@ -35,10 +35,10 @@ Live generation sends the event brief and any revision request to Groq. Groq say
 - Sends a bounded brief to one server-side Groq request using strict JSON Schema output.
 - Validates the response at runtime and rejects duplicate budget categories.
 - Treats model budget weights as relative priorities. Server-side integer arithmetic allocates the host's cap exactly across the suggested categories; allocations are planning targets, not quotes or verified local prices.
-- Renders the idea, editable concept and tasks, budget picture, vendor due-diligence checklist, personalized ideas, and open questions.
-- Saves up to 12 plans in this browser, including task status, vendor notes, count-only event and session attendance, preferences, session-scoped tasks, cost records, and payment history. Plans can be exported and imported as validated version-3 JSON; version-1 and version-2 local plans and files are upgraded when read. Plans are not synced to another device.
+- Renders the idea, editable concept and tasks, task prerequisites with completion blocking, schedule-conflict warnings, budget picture, vendor due-diligence checklist, personalized ideas, and open questions.
+- Saves up to 12 plans in this browser, including task status, vendor notes, count-only event and session attendance, preferences, session-scoped tasks, cost records, and payment history. Plans can be exported and imported as validated version-4 JSON; version-1 through version-3 local plans and files are upgraded when read. Plans are not synced to another device.
 - For AI plans, drafts requested changes separately and shows a review summary before applying them. Accepting preserves recorded host work and creates a reversible revision; stale candidates are rejected, and restoring is available until a later edit.
-- Tracks fixed/per-guest cost entries, estimate ranges, payments, fees, and reserve separately. Unknown mandatory costs and forecasts that cross or exceed the cap remain visible.
+- Tracks fixed/per-guest costs, estimate ranges, dated payment history, source-named discounts, fees, taxes, and reserve. Adjustment amounts use exact minor-unit arithmetic in the order base minus discounts plus fees plus taxes; included charges are not counted twice, per-guest lines use the applicable attendance and minimum, and unknown mandatory charge reviews remain visible. The app does not infer percentages or statutory tax rules.
 - Preserves the brief and current draft when the provider is unconfigured or a request fails.
 
 The request route limits the body to 16 KiB, caps model completion at 3,000 tokens, allows four generation attempts per client key within 20 minutes per running process, and does not retry a failed provider call. Ten focused handler tests cover body limits, malformed and invalid input, missing provider configuration, safe generic failures, output invariants, and rate-window behavior. The in-memory limit is best-effort only: it resets with the process, does not coordinate across instances, and depends on trusted proxy headers. Configure hosting-level quotas and rate limits before public deployment.
@@ -49,9 +49,13 @@ When live generation is enabled, the event brief and any revision request are se
 
 ## Current limits
 
-Live provider output, full end-to-end event journeys, confirmed vendor quotes, regional price sources, date-aware calendar reminders and dependency checks, shared accounts, and a deployed app remain unverified or unimplemented. Session-specific attendance and cost math have focused module tests, including a revision that changes one session while preserving another session's count and fixed costs; the broader protected-constraint/infeasibility matrix and direct review/discard/restore browser testing remain open. Unknown costs and assumptions should be confirmed by the host. Examples are synthetic and are not evidence of market pricing or vendor availability. Automated checks pass, but T-001, T-008, T-009, T-010, T-011, T-015, T-016, T-017, T-018, and T-019 remain partial. API handler limits and generic errors have focused tests; deployment/proxy enforcement, real provider failure behavior, keyboard and screen-reader journeys, rendered contrast, and mobile reflow still need verification.
+Live provider output, full end-to-end event journeys, confirmed vendor quotes, regional price sources, date-aware calendar reminders, shared accounts, and a deployed app remain unverified or unimplemented. Task prerequisite cycles, completion order, and conflicts for past, out-of-order, or post-event deadlines have focused module tests; the direct keyboard journey and rendered warning review remain open under T-005. Session-specific attendance and cost math have focused module tests, including a revision that changes one session while preserving another session's count and fixed costs; the broader protected-constraint/infeasibility matrix and direct review/discard/restore browser testing remain open. Unknown costs and assumptions should be confirmed by the host. Examples are synthetic and are not evidence of market pricing or vendor availability. Automated checks pass, but T-001, T-005, T-008, T-009, T-010, T-011, T-015, T-016, T-017, T-018, and T-019 remain partial. API handler limits and generic errors have focused tests; deployment/proxy enforcement, real provider failure behavior, keyboard and screen-reader journeys, rendered contrast, and mobile reflow still need verification.
 
 Planning notes and the evidence pack live outside this repository in the sibling `Mehfiloom-project-files` directory. They document the contest parameters and the remaining milestones; they are not application runtime dependencies.
+
+## Verification and source snapshot — 21 October 2026
+
+The current M-002 working-tree snapshot passed `npm test` (68/68), `npm run lint`, `npm run build`, `npx tsc --noEmit`, and `git diff --check`. A synthetic local-browser smoke entered a fixed base price, a per-guest fee, fixed tax and discount amounts with source notes, reviewed fee/tax status, and reloaded the isolated-origin planner; the adjusted total and review state persisted. T-020's earlier fresh-clone setup/build/test and source-level module review used baseline commit `a8fcc6bd9ac6ac97999605a8b232dd64c9e9211c` with six uncommitted tracked files overlaid, so that hash alone does not identify the M-002 snapshot. T-021 remains partial: a fresh query using configured local Git authentication found one remote branch (`main`), while an unauthenticated GitHub API read returned 404 and a credential-disabled Git read could not authenticate. Public access remains unverified, and the 10 MB measurement basis is still unclear. The local evidence pack is kept outside this repository in `../Mehfiloom-project-files/`; its [verification plan](../Mehfiloom-project-files/04-verification-and-evaluation.md) and [machine-readable registry](../Mehfiloom-project-files/project-registry.json) links work only in the local sibling-folder layout and are not public evidence URLs. No live provider request, deployment, or submission occurred.
 
 ## Useful commands
 
@@ -71,3 +75,7 @@ npm start
 - [Groq GPT-OSS 120B model](https://console.groq.com/docs/model/openai/gpt-oss-120b)
 - [Groq rate limits](https://console.groq.com/docs/rate-limits)
 - [Groq data policy](https://console.groq.com/docs/your-data)
+
+## M-002 adjustment update — 21 October 2026
+
+The M-002 implementation adds source-backed fixed or per-guest discount, fee, and tax amounts; exact forecast recalculation; legacy schema-v3 migration; and payment validation against adjusted commitments. Fee/tax review requires an actual source note and either an included status or a separately sourced amount, including zero. The local browser smoke and checks listed above passed. Storage-failure UI behavior and print output remain unverified; no live provider request, deployment, or submission occurred.

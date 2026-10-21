@@ -9,10 +9,11 @@ import {
   type PlannerProposal,
 } from "./planner.ts";
 
-export const WORKSPACE_STORAGE_KEY = "mehfiloom.workspace.v3";
-export const LEGACY_WORKSPACE_STORAGE_KEY = "mehfiloom.workspace.v2";
-export const OLDER_WORKSPACE_STORAGE_KEY = "mehfiloom.workspace.v1";
-export const WORKSPACE_VERSION = 3;
+export const WORKSPACE_STORAGE_KEY = "mehfiloom.workspace.v4";
+export const LEGACY_WORKSPACE_STORAGE_KEY = "mehfiloom.workspace.v3";
+export const OLDER_WORKSPACE_STORAGE_KEY = "mehfiloom.workspace.v2";
+export const OLDEST_WORKSPACE_STORAGE_KEY = "mehfiloom.workspace.v1";
+export const WORKSPACE_VERSION = 4;
 export const MAX_SAVED_PLANS = 12;
 export const MAX_PLAN_DOCUMENT_BYTES = 500_000;
 export const MAX_WORKSPACE_BYTES = 2_000_000;
@@ -56,6 +57,20 @@ export const costPaymentSchema = z.object({
   note: z.string().trim().max(160),
 }).strict();
 
+export const costAdjustmentSchema = z.object({
+  id: idSchema,
+  kind: z.enum(["discount", "fee", "tax"]),
+  label: z.string().trim().min(2).max(80),
+  pricingModel: z.enum(["fixed", "per_guest"]).default("fixed"),
+  amountMinor: z.number().int().min(0).max(1_000_000_000_000),
+  amountMaxMinor: z.number().int().min(0).max(1_000_000_000_000).nullable().default(null),
+  sourceNote: z.string().trim().min(3).max(300),
+}).strict().superRefine((adjustment, context) => {
+  if (adjustment.amountMaxMinor !== null && adjustment.amountMaxMinor < adjustment.amountMinor) {
+    context.addIssue({ code: "custom", path: ["amountMaxMinor"], message: "The upper adjustment must be at least the lower amount." });
+  }
+});
+
 export const costItemSchema = z.object({
   id: idSchema,
   label: z.string().trim().min(2).max(100),
@@ -72,6 +87,9 @@ export const costItemSchema = z.object({
   validUntil: dateOnlySchema.nullable(),
   minimumGuestCount: z.number().int().min(1).max(10000).nullable(),
   feesIncluded: z.boolean().nullable(),
+  taxesIncluded: z.boolean().nullable().default(null),
+  chargesReviewed: z.boolean().default(false),
+  adjustments: z.array(costAdjustmentSchema).max(20).default([]),
   exclusions: z.array(z.string().trim().min(2).max(160)).max(12),
   sourceNote: z.string().max(300),
 }).strict().superRefine((item, context) => {
@@ -104,7 +122,43 @@ export const costItemSchema = z.object({
   if (item.payments.length > 0 && item.evidence !== "committed") {
     context.addIssue({ code: "custom", path: ["payments"], message: "Payments can only be recorded against a commitment." });
   }
+  const adjustmentIds = item.adjustments.map((adjustment) => adjustment.id);
+  if (new Set(adjustmentIds).size !== adjustmentIds.length) {
+    context.addIssue({ code: "custom", path: ["adjustments"], message: "Adjustment IDs must be unique within a cost." });
+  }
+  if (item.feesIncluded === true && item.adjustments.some((adjustment) => adjustment.kind === "fee")) {
+    context.addIssue({ code: "custom", path: ["adjustments"], message: "A cost cannot mark fees included and also add a separate fee. Set the fee status to excluded or extra." });
+  }
+  if (item.taxesIncluded === true && item.adjustments.some((adjustment) => adjustment.kind === "tax")) {
+    context.addIssue({ code: "custom", path: ["adjustments"], message: "A cost cannot mark taxes included and also add a separate tax. Set the tax status to excluded or extra." });
+  }
+  if (item.evidence === "committed" && item.adjustments.some((adjustment) => adjustment.amountMaxMinor !== null && adjustment.amountMaxMinor !== adjustment.amountMinor)) {
+    context.addIssue({ code: "custom", path: ["adjustments"], message: "A committed cost must use exact fee, tax, and discount amounts." });
+  }
+  if (item.chargesReviewed && (item.sourceNote.trim().length < 3 || /^no quote or local price has been supplied\.?$/i.test(item.sourceNote.trim()))) {
+    context.addIssue({ code: "custom", path: ["sourceNote"], message: "Record the actual quote or source used to confirm fees and taxes before completing this review." });
+  }
+  if (item.chargesReviewed && item.amountMinor === null) {
+    context.addIssue({ code: "custom", path: ["chargesReviewed"], message: "Price the cost before completing its fee and tax review." });
+  }
+  if (item.chargesReviewed && (item.feesIncluded === null || item.taxesIncluded === null)) {
+    context.addIssue({ code: "custom", path: ["chargesReviewed"], message: "Record whether fees and taxes are included or recorded separately before completing this review." });
+  }
+  if (item.chargesReviewed && item.feesIncluded === false && !item.adjustments.some((adjustment) => adjustment.kind === "fee")) {
+    context.addIssue({ code: "custom", path: ["chargesReviewed"], message: "Record a sourced fee amount, including zero when no separate fee applies." });
+  }
+  if (item.chargesReviewed && item.taxesIncluded === false && !item.adjustments.some((adjustment) => adjustment.kind === "tax")) {
+    context.addIssue({ code: "custom", path: ["chargesReviewed"], message: "Record a sourced tax amount, including zero when no separate tax applies." });
+  }
 });
+
+export type CostAdjustment = z.infer<typeof costAdjustmentSchema>;
+
+function adjustmentAmountMinor(adjustment: CostAdjustment, guestUnits: number, range: "lower" | "upper"): bigint {
+  const amountMinor = range === "upper" ? adjustment.amountMaxMinor ?? adjustment.amountMinor : adjustment.amountMinor;
+  const multiplier = adjustment.pricingModel === "per_guest" ? guestUnits : 1;
+  return BigInt(amountMinor) * BigInt(multiplier);
+}
 
 const preferenceSchema = z.object({
   id: idSchema,
@@ -200,9 +254,29 @@ const savedPlanBaseSchema = z.object({
   }
 
   const taskIds = new Set(plan.tasks.map((task) => task.id));
+  let dependencyCycleFound = false;
+  const dependencyVisitState = new Map<string, "visiting" | "visited">();
+  const visitDependencies = (taskId: string): void => {
+    if (dependencyVisitState.get(taskId) === "visited") return;
+    if (dependencyVisitState.get(taskId) === "visiting") {
+      dependencyCycleFound = true;
+      return;
+    }
+
+    dependencyVisitState.set(taskId, "visiting");
+    const task = plan.tasks.find((item) => item.id === taskId);
+    for (const dependencyId of task?.dependencyIds ?? []) {
+      if (taskIds.has(dependencyId)) visitDependencies(dependencyId);
+    }
+    dependencyVisitState.set(taskId, "visited");
+  };
+
   plan.tasks.forEach((task, index) => {
     if (task.sessionId && !sessionIds.has(task.sessionId)) {
       context.addIssue({ code: "custom", path: ["tasks", index, "sessionId"], message: "Tasks must reference a session in this plan." });
+    }
+    if (new Set(task.dependencyIds).size !== task.dependencyIds.length) {
+      context.addIssue({ code: "custom", path: ["tasks", index, "dependencyIds"], message: "A task cannot list the same prerequisite more than once." });
     }
     for (const dependencyId of task.dependencyIds) {
       if (!taskIds.has(dependencyId)) {
@@ -211,7 +285,13 @@ const savedPlanBaseSchema = z.object({
     }
   });
 
+  for (const task of plan.tasks) visitDependencies(task.id);
+  if (dependencyCycleFound) {
+    context.addIssue({ code: "custom", path: ["tasks"], message: "Task dependencies cannot contain a cycle." });
+  }
+
   const vendorIds = new Set(plan.vendors.map((vendor) => vendor.id));
+  let forecastMaximumWithReserveMinor = BigInt(plan.budget.capMinor);
   plan.budget.items.forEach((item, index) => {
     if (item.sessionId && !sessionIds.has(item.sessionId)) {
       context.addIssue({ code: "custom", path: ["budget", "items", index, "sessionId"], message: "Costs must reference a session in this plan." });
@@ -219,18 +299,50 @@ const savedPlanBaseSchema = z.object({
     if (item.vendorId && !vendorIds.has(item.vendorId)) {
       context.addIssue({ code: "custom", path: ["budget", "items", index, "vendorId"], message: "Cost items must reference a vendor in this plan." });
     }
-    if (item.evidence === "committed" && item.amountMinor !== null) {
-      const sessionGuests = item.sessionId
-        ? plan.planBrief.sessions.find((session) => session.id === item.sessionId)?.guestCount ?? plan.guestSummary.expected
-        : plan.guestSummary.expected;
-      const units = item.pricingModel === "per_guest"
-        ? Math.max(sessionGuests, item.minimumGuestCount ?? sessionGuests)
-        : 1;
-      if (BigInt(item.paidMinor) > BigInt(item.amountMinor) * BigInt(units)) {
-        context.addIssue({ code: "custom", path: ["budget", "items", index, "paidMinor"], message: "Paid amount cannot exceed the commitment total." });
-      }
+    const sessionGuests = item.sessionId
+      ? plan.planBrief.sessions.find((session) => session.id === item.sessionId)?.guestCount ?? plan.guestSummary.expected
+      : plan.guestSummary.expected;
+    const guestUnits = Math.max(sessionGuests, item.minimumGuestCount ?? sessionGuests);
+    const units = item.pricingModel === "per_guest" ? guestUnits : 1;
+    const baseLowerMinor = item.amountMinor === null ? 0n : BigInt(item.amountMinor) * BigInt(units);
+    const baseUpperMinor = item.amountMinor === null ? 0n : BigInt(item.amountMaxMinor ?? item.amountMinor) * BigInt(units);
+    const discountsUpperMinor = item.adjustments
+      .filter((adjustment) => adjustment.kind === "discount")
+      .reduce((sum, adjustment) => sum + adjustmentAmountMinor(adjustment, guestUnits, "upper"), 0n);
+    const discountsLowerMinor = item.adjustments
+      .filter((adjustment) => adjustment.kind === "discount")
+      .reduce((sum, adjustment) => sum + adjustmentAmountMinor(adjustment, guestUnits, "lower"), 0n);
+    if (item.amountMinor !== null && discountsUpperMinor > baseLowerMinor) {
+      context.addIssue({ code: "custom", path: ["budget", "items", index, "adjustments"], message: "Discounts cannot exceed the lowest base cost." });
+    }
+    const feesLowerMinor = item.adjustments
+      .filter((adjustment) => adjustment.kind === "fee")
+      .reduce((sum, adjustment) => sum + adjustmentAmountMinor(adjustment, guestUnits, "lower"), 0n);
+    const feesUpperMinor = item.adjustments
+      .filter((adjustment) => adjustment.kind === "fee")
+      .reduce((sum, adjustment) => sum + adjustmentAmountMinor(adjustment, guestUnits, "upper"), 0n);
+    const taxesLowerMinor = item.adjustments
+      .filter((adjustment) => adjustment.kind === "tax")
+      .reduce((sum, adjustment) => sum + adjustmentAmountMinor(adjustment, guestUnits, "lower"), 0n);
+    const taxesUpperMinor = item.adjustments
+      .filter((adjustment) => adjustment.kind === "tax")
+      .reduce((sum, adjustment) => sum + adjustmentAmountMinor(adjustment, guestUnits, "upper"), 0n);
+    const commitmentTotalLowerMinor = baseLowerMinor - discountsUpperMinor + feesLowerMinor + taxesLowerMinor;
+    const forecastUpperMinor = baseUpperMinor - discountsLowerMinor + feesUpperMinor + taxesUpperMinor;
+    if (item.evidence === "committed" && baseUpperMinor - discountsLowerMinor + feesLowerMinor + taxesLowerMinor !== commitmentTotalLowerMinor) {
+      context.addIssue({ code: "custom", path: ["budget", "items", index, "adjustments"], message: "Committed costs require exact adjustment amounts." });
+    }
+    if (forecastUpperMinor > BigInt(Number.MAX_SAFE_INTEGER)) {
+      context.addIssue({ code: "custom", path: ["budget", "items", index, "adjustments"], message: "This cost exceeds the supported exact forecast range." });
+    }
+    if (forecastUpperMinor >= 0n) forecastMaximumWithReserveMinor += forecastUpperMinor;
+    if (BigInt(item.paidMinor) > commitmentTotalLowerMinor) {
+      context.addIssue({ code: "custom", path: ["budget", "items", index, "paidMinor"], message: "Paid amount cannot exceed the commitment total after discounts, fees, and taxes." });
     }
   });
+  if (forecastMaximumWithReserveMinor > BigInt(Number.MAX_SAFE_INTEGER)) {
+    context.addIssue({ code: "custom", path: ["budget", "items"], message: "Combined cost forecasts exceed the supported exact range." });
+  }
 
   if (plan.budget.currency !== plan.planBrief.currency) {
     context.addIssue({ code: "custom", path: ["budget", "currency"], message: "Budget and event currencies must match." });
@@ -305,26 +417,137 @@ export type VendorRecord = z.infer<typeof vendorRecordSchema>;
 export type TaskRecord = z.infer<typeof taskRecordSchema>;
 export type SavedPlan = z.infer<typeof savedPlanSchema>;
 
+export function canAddTaskDependency(
+  tasks: readonly Pick<TaskRecord, "id" | "dependencyIds">[],
+  taskId: string,
+  dependencyId: string,
+): boolean {
+  if (taskId === dependencyId) return false;
+  const taskById = new Map(tasks.map((task) => [task.id, task]));
+  const currentTask = taskById.get(taskId);
+  if (!currentTask || !taskById.has(dependencyId) || currentTask.dependencyIds.includes(dependencyId)) return false;
+
+  const pending = [dependencyId];
+  const visited = new Set<string>();
+  while (pending.length > 0) {
+    const currentId = pending.pop();
+    if (!currentId || visited.has(currentId)) continue;
+    if (currentId === taskId) return false;
+    visited.add(currentId);
+    pending.push(...(taskById.get(currentId)?.dependencyIds ?? []));
+  }
+  return true;
+}
+
+export function canMarkTaskDone(
+  task: Pick<TaskRecord, "dependencyIds">,
+  tasks: readonly Pick<TaskRecord, "id" | "status">[],
+): boolean {
+  const taskById = new Map(tasks.map((item) => [item.id, item]));
+  return task.dependencyIds.every((dependencyId) => taskById.get(dependencyId)?.status === "done");
+}
+
+export function canReopenTask(
+  task: Pick<TaskRecord, "id" | "status">,
+  tasks: readonly Pick<TaskRecord, "status" | "dependencyIds">[],
+): boolean {
+  return task.status !== "done" || !tasks.some(
+    (candidate) => candidate.status === "done" && candidate.dependencyIds.includes(task.id),
+  );
+}
+
+export function taskScheduleConflicts(tasks: readonly TaskRecord[], eventDate = "", today = ""): Map<string, string[]> {
+  const taskById = new Map(tasks.map((task) => [task.id, task]));
+  const conflicts = new Map<string, string[]>();
+
+  for (const task of tasks) {
+    const messages: string[] = [];
+    const dueDate = task.dueDate;
+    if (dueDate && eventDate && dueDate > eventDate) {
+      messages.push(`This task is due ${dueDate}, after the event date ${eventDate}.`);
+    }
+    if (dueDate && today && dueDate < today && task.status !== "done") {
+      messages.push(`This task was due ${dueDate} and is still open.`);
+    }
+    if (dueDate) {
+      const laterPrerequisites = task.dependencyIds
+        .map((dependencyId) => taskById.get(dependencyId))
+        .filter((dependency): dependency is TaskRecord => dependency !== undefined && dependency.dueDate !== null && dependency.dueDate > dueDate);
+      messages.push(...laterPrerequisites.map((dependency) => `${dependency.title} is due ${dependency.dueDate}, after this task.`));
+    }
+    if (messages.length > 0) conflicts.set(task.id, messages);
+  }
+
+  return conflicts;
+}
+
 export type CostItemForecast = {
   units: number;
+  baseLowerMinor: number | null;
+  baseUpperMinor: number | null;
+  discountLowerMinor: number;
+  discountUpperMinor: number;
+  feeLowerMinor: number;
+  feeUpperMinor: number;
+  taxLowerMinor: number;
+  taxUpperMinor: number;
   lowerMinor: number | null;
   upperMinor: number | null;
 };
 
 function safeMinor(value: bigint): number {
-  return value > BigInt(Number.MAX_SAFE_INTEGER) ? Number.MAX_SAFE_INTEGER : Number(value);
+  if (value < 0n || value > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error("This amount exceeds the supported exact forecast range.");
+  }
+  return Number(value);
 }
 
 export function forecastCostItem(item: CostItem, expectedGuests: number): CostItemForecast {
-  const units = item.pricingModel === "per_guest"
-    ? Math.max(expectedGuests, item.minimumGuestCount ?? expectedGuests)
-    : 1;
-  if (item.amountMinor === null) return { units, lowerMinor: null, upperMinor: null };
+  const guestUnits = Math.max(expectedGuests, item.minimumGuestCount ?? expectedGuests);
+  const units = item.pricingModel === "per_guest" ? guestUnits : 1;
   const multiplier = BigInt(units);
+  const adjustmentTotal = (kind: CostAdjustment["kind"], range: "lower" | "upper") => item.adjustments
+    .filter((adjustment) => adjustment.kind === kind)
+    .reduce((sum, adjustment) => sum + adjustmentAmountMinor(adjustment, guestUnits, range), 0n);
+  const discountLowerMinor = adjustmentTotal("discount", "lower");
+  const discountUpperMinor = adjustmentTotal("discount", "upper");
+  const feeLowerMinor = adjustmentTotal("fee", "lower");
+  const feeUpperMinor = adjustmentTotal("fee", "upper");
+  const taxLowerMinor = adjustmentTotal("tax", "lower");
+  const taxUpperMinor = adjustmentTotal("tax", "upper");
+  if (item.amountMinor === null) {
+    return {
+      units,
+      baseLowerMinor: null,
+      baseUpperMinor: null,
+      discountLowerMinor: safeMinor(discountLowerMinor),
+      discountUpperMinor: safeMinor(discountUpperMinor),
+      feeLowerMinor: safeMinor(feeLowerMinor),
+      feeUpperMinor: safeMinor(feeUpperMinor),
+      taxLowerMinor: safeMinor(taxLowerMinor),
+      taxUpperMinor: safeMinor(taxUpperMinor),
+      lowerMinor: null,
+      upperMinor: null,
+    };
+  }
+  const baseLowerMinor = BigInt(item.amountMinor) * multiplier;
+  const baseUpperMinor = BigInt(item.amountMaxMinor ?? item.amountMinor) * multiplier;
+  if (discountUpperMinor > baseLowerMinor) throw new Error("Discounts cannot exceed the lowest base cost.");
+  const lowerMinor = baseLowerMinor - discountUpperMinor + feeLowerMinor + taxLowerMinor;
+  const upperMinor = baseUpperMinor - discountLowerMinor + feeUpperMinor + taxUpperMinor;
+  if (lowerMinor < 0n || upperMinor < lowerMinor) throw new Error("The adjusted cost range is invalid.");
   return {
     units,
-    lowerMinor: safeMinor(BigInt(item.amountMinor) * multiplier),
-    upperMinor: safeMinor(BigInt(item.amountMaxMinor ?? item.amountMinor) * multiplier),
+    baseLowerMinor: safeMinor(baseLowerMinor),
+    baseUpperMinor: safeMinor(baseUpperMinor),
+    discountLowerMinor: safeMinor(discountLowerMinor),
+    discountUpperMinor: safeMinor(discountUpperMinor),
+    feeLowerMinor: safeMinor(feeLowerMinor),
+    feeUpperMinor: safeMinor(feeUpperMinor),
+    taxLowerMinor: safeMinor(taxLowerMinor),
+    taxUpperMinor: safeMinor(taxUpperMinor),
+    lowerMinor: safeMinor(lowerMinor),
+    upperMinor: safeMinor(upperMinor),
   };
 }
 
@@ -464,6 +687,9 @@ export function createSavedPlan(
     validUntil: null,
     minimumGuestCount: null,
     feesIncluded: null,
+    taxesIncluded: null,
+    chargesReviewed: false,
+    adjustments: [],
     exclusions: [],
     sourceNote: "No quote or local price has been supplied.",
   }));
@@ -694,7 +920,7 @@ export type BudgetHealth = {
   outstandingCommittedMinor: number;
   unresolvedCount: number;
   unresolvedMandatoryCount: number;
-  unresolvedMandatoryFeeCount: number;
+  unresolvedMandatoryChargeCount: number;
   state: "within_cap" | "over_cap" | "range_crosses_cap" | "unknown";
 };
 
@@ -718,14 +944,18 @@ export function calculateBudgetHealth(plan: SavedPlan): BudgetHealth {
   const paidMinor = safeMinor(validated.budget.items.reduce((sum, item) => sum + BigInt(item.paidMinor), 0n));
   const committedPaidMinor = safeMinor(committed.reduce((sum, { item }) => sum + BigInt(item.paidMinor), 0n));
   const unresolved = validated.budget.items.filter((item) => item.amountMinor === null);
-  const unresolvedMandatoryFeeCount = validated.budget.items.filter((item) => item.mandatory && item.amountMinor !== null && item.feesIncluded !== true).length;
+  const unresolvedMandatoryChargeCount = validated.budget.items.filter((item) => item.mandatory
+    && item.amountMinor !== null
+    && (!item.chargesReviewed
+      || (item.feesIncluded !== true && !item.adjustments.some((adjustment) => adjustment.kind === "fee"))
+      || (item.taxesIncluded !== true && !item.adjustments.some((adjustment) => adjustment.kind === "tax")))).length;
   const forecastWithReserveMinor = safeMinor(BigInt(knownCostsMinor) + BigInt(reserveMinor));
   const forecastWithReserveMaxMinor = safeMinor(BigInt(knownCostsMaxMinor) + BigInt(reserveMinor));
   const state = forecastWithReserveMinor > validated.budget.capMinor
     ? "over_cap"
     : forecastWithReserveMaxMinor > validated.budget.capMinor
       ? "range_crosses_cap"
-      : (!validated.budget.reviewComplete || unresolved.some((item) => item.mandatory) || unresolvedMandatoryFeeCount > 0)
+      : (!validated.budget.reviewComplete || unresolved.some((item) => item.mandatory) || unresolvedMandatoryChargeCount > 0)
       ? "unknown"
       : "within_cap";
 
@@ -739,7 +969,7 @@ export function calculateBudgetHealth(plan: SavedPlan): BudgetHealth {
     outstandingCommittedMinor: Math.max(0, committedMinor - committedPaidMinor),
     unresolvedCount: unresolved.length,
     unresolvedMandatoryCount: unresolved.filter((item) => item.mandatory).length,
-    unresolvedMandatoryFeeCount,
+    unresolvedMandatoryChargeCount,
     state,
   };
 }
