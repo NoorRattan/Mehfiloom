@@ -205,6 +205,7 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
   const [workspace, setWorkspace] = useState<Workspace>(() => createWorkspace(makeSeedPlan(initialEventType)));
   const [storageReady, setStorageReady] = useState(false);
   const [storageLoadFailed, setStorageLoadFailed] = useState(false);
+  const [storageLoadAttempt, setStorageLoadAttempt] = useState(0);
   const [todayDate, setTodayDate] = useState("");
   const [storageStatus, setStorageStatus] = useState("Loading plans on this device…");
   const [storageError, setStorageError] = useState("");
@@ -236,17 +237,22 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
         const loaded = loadWorkspaceFromStorage(window.localStorage);
         if (!active) return;
         if (loaded) {
-          const matchingPlan = loaded.plans.find((item) => item.draftBrief.eventType === initialEventType);
-          if (matchingPlan) {
-            setWorkspace({ ...loaded, activePlanId: matchingPlan.id });
-          } else if (loaded.plans.length < MAX_SAVED_PLANS) {
-            const nextPlan = makeSeedPlan(initialEventType, makeId());
-            setWorkspace({ ...loaded, activePlanId: nextPlan.id, plans: [...loaded.plans, nextPlan] });
-          } else {
+          const savedActivePlan = loaded.plans.find((item) => item.id === loaded.activePlanId);
+          if (savedActivePlan?.draftBrief.eventType === initialEventType) {
             setWorkspace(loaded);
-            setImportMessage(`Your device already has ${MAX_SAVED_PLANS} plans. Choose an existing ${EVENT_LABELS[initialEventType].toLowerCase()} plan or export and remove one before creating another.`);
+          } else {
+            const matchingPlan = loaded.plans.find((item) => item.draftBrief.eventType === initialEventType);
+            if (matchingPlan) {
+              setWorkspace({ ...loaded, activePlanId: matchingPlan.id });
+            } else if (loaded.plans.length < MAX_SAVED_PLANS) {
+              const nextPlan = makeSeedPlan(initialEventType, makeId());
+              setWorkspace({ ...loaded, activePlanId: nextPlan.id, plans: [...loaded.plans, nextPlan] });
+            } else {
+              setWorkspace(loaded);
+              setImportMessage(`Your device already has ${MAX_SAVED_PLANS} plans. Choose an existing ${EVENT_LABELS[initialEventType].toLowerCase()} plan or export and remove one before creating another.`);
+            }
           }
-          setStorageStatus("Saved on this device");
+          setStorageStatus("Checking local plans…");
         } else {
           setStorageStatus("New local workspace");
         }
@@ -264,13 +270,15 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
     }
     void loadFromDevice();
     return () => { active = false; };
-  }, [initialEventType]);
+  }, [initialEventType, storageLoadAttempt]);
 
   useEffect(() => {
     if (!storageReady || storageLoadFailed) return;
     let active = true;
     async function saveToDevice() {
       await Promise.resolve();
+      if (!active) return;
+      setStorageStatus("Saving changes on this device…");
       try {
         saveWorkspaceToStorage(window.localStorage, workspace);
         if (active) {
@@ -313,6 +321,7 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
     && activePlan.revisionNumber === activePlan.undoRevision.revisionNumber;
 
   function updateWorkspace(update: (current: Workspace) => Workspace) {
+    if (!storageLoadFailed) setStorageStatus("Saving changes on this device…");
     setWorkspace((current) => update(current));
   }
 
@@ -789,6 +798,27 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
     }
   }
 
+  function retryLoadingStorage() {
+    setStorageReady(false);
+    setStorageLoadFailed(false);
+    setStorageError("");
+    setStorageStatus("Loading plans on this device…");
+    setStorageLoadAttempt((attempt) => attempt + 1);
+  }
+
+  function retryWorkspaceSave() {
+    if (!storageReady || storageLoadFailed) return;
+    setStorageStatus("Saving changes on this device…");
+    try {
+      saveWorkspaceToStorage(window.localStorage, workspace);
+      setStorageError("");
+      setStorageStatus("Saved on this device");
+    } catch (saveError) {
+      setStorageError(saveError instanceof Error ? saveError.message : "The browser could not save this workspace.");
+      setStorageStatus("Changes are not saved");
+    }
+  }
+
   function updateAmountOnBlur(cost: CostItem, value: string) {
     try {
       if (!value.trim()) {
@@ -903,7 +933,18 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
             <input ref={importInput} className="visually-hidden" type="file" accept="application/json,.json" onChange={importPlan} aria-label="Choose a Mehfiloom plan JSON file" />
             <button className="delete-plan-button" type="button" onClick={deletePlan}><Trash2 size={15} /> Delete</button>
           </div>
-          {storageError && <div className="workspace-message is-error" role="alert">{storageError}{storageLoadFailed && <button type="button" onClick={resetUnreadableStorage}>Reset local plans</button>}</div>}
+          {storageError && <div className="workspace-message is-error" role="alert">
+            <p>{storageLoadFailed
+              ? `Saved plans could not be loaded (${storageError}). The displayed plan is only in this tab. Export each plan you changed before retrying or resetting; saved data will not be replaced unless you reset it.`
+              : `Changes are only in this tab because the browser could not save them (${storageError}). Export the active plan before reloading, or retry saving.`}</p>
+            <div className="workspace-message-actions">
+              {storageLoadFailed && <>
+                <button type="button" onClick={retryLoadingStorage}>Retry loading</button>
+                <button type="button" onClick={resetUnreadableStorage}>Reset local plans</button>
+              </>}
+              {!storageLoadFailed && storageStatus === "Changes are not saved" && <button type="button" onClick={retryWorkspaceSave}>Retry save</button>}
+            </div>
+          </div>}
           {!storageReady && <div className="workspace-message" role="status" aria-live="polite">Loading saved plans from this browser…</div>}
           {importMessage && <div className="workspace-message" role="status">{importMessage}</div>}
           <p className="local-storage-note">Plans stay in this browser on this device. Export JSON to keep a backup or move a plan. Guest names are never collected.</p>

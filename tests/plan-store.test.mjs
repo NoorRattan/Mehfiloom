@@ -134,7 +134,7 @@ test("versioned workspace save and reload preserves multiple complete plans", ()
   assert.deepEqual(reloaded.plans[1].tasks, second.tasks);
 });
 
-test("workspace persistence surfaces denied reads and quota failures", () => {
+test("workspace persistence recovers after denied reads and quota failures", () => {
   const plan = makePlan();
   const workspace = {
     format: "mehfiloom-workspace",
@@ -143,9 +143,17 @@ test("workspace persistence surfaces denied reads and quota failures", () => {
     plans: [plan],
   };
   const values = new Map();
+  let readsDenied = false;
+  let writesDenied = false;
   const storage = {
-    getItem(key) { return values.get(key) ?? null; },
-    setItem(key, value) { values.set(key, value); },
+    getItem(key) {
+      if (readsDenied) throw new Error("Storage access denied");
+      return values.get(key) ?? null;
+    },
+    setItem(key, value) {
+      if (writesDenied) throw new Error("Quota exceeded");
+      values.set(key, value);
+    },
     removeItem(key) { values.delete(key); },
   };
 
@@ -153,10 +161,20 @@ test("workspace persistence surfaces denied reads and quota failures", () => {
   saveWorkspaceToStorage(storage, workspace);
   assert.ok(values.has(WORKSPACE_STORAGE_KEY));
   assert.deepEqual(loadWorkspaceFromStorage(storage), workspace);
+  const changedPlan = { ...plan, draftBrief: { ...plan.draftBrief, eventName: "Updated synthetic plan" } };
+  const changedWorkspace = { ...workspace, plans: [changedPlan] };
+  writesDenied = true;
+  assert.throws(() => saveWorkspaceToStorage(storage, changedWorkspace), /Quota exceeded/);
+  assert.equal(loadWorkspaceFromStorage(storage).plans[0].draftBrief.eventName, plan.draftBrief.eventName);
+  writesDenied = false;
+  saveWorkspaceToStorage(storage, changedWorkspace);
+  assert.equal(loadWorkspaceFromStorage(storage).plans[0].draftBrief.eventName, "Updated synthetic plan");
+  readsDenied = true;
+  assert.throws(() => loadWorkspaceFromStorage(storage), /Storage access denied/);
+  readsDenied = false;
+  assert.deepEqual(loadWorkspaceFromStorage(storage), changedWorkspace);
   clearWorkspaceStorage(storage);
   assert.equal(loadWorkspaceFromStorage(storage), null);
-  assert.throws(() => loadWorkspaceFromStorage({ getItem() { throw new Error("Storage access denied"); } }), /Storage access denied/);
-  assert.throws(() => saveWorkspaceToStorage({ setItem() { throw new Error("Quota exceeded"); } }, workspace), /Quota exceeded/);
 });
 
 test("legacy v1 browser storage migrates saved totals into dated-payment history safely", () => {
