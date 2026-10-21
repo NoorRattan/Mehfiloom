@@ -13,6 +13,7 @@ import { EXAMPLE_BRIEF, EXAMPLE_PROPOSAL, getEventTemplateProposal, parseBudgetM
 import {
   acceptPlanRevision,
   diffPlanRevision,
+  revisionGenerationRequest,
   restorePreviousPlanRevision,
 } from "../lib/plan-revisions.ts";
 
@@ -20,6 +21,20 @@ const CREATED_AT = "2026-10-20T12:00:00.000Z";
 const EDITED_AT = "2026-10-20T12:05:00.000Z";
 const GENERATED_AT = "2026-10-20T12:10:00.000Z";
 const ACCEPTED_AT = "2026-10-20T12:15:00.000Z";
+
+test("revision provider context keeps accepted preferences while fitting the bounded request body", () => {
+  const priorRequests = Array.from({ length: 20 }, (_, index) =>
+    `Earlier revision ${index + 1}: exclude dance activities and keep participation optional. ${"इ".repeat(400)}`,
+  );
+  const request = revisionGenerationRequest(EXAMPLE_BRIEF, priorRequests, "Keep the quiet option and update the welcome plan.");
+  const byteLength = new TextEncoder().encode(JSON.stringify(request)).byteLength;
+
+  assert.ok(byteLength <= 15 * 1024, "revision context leaves headroom below the 16 KiB route limit");
+  assert.ok(request.priorRevisionRequests.length < priorRequests.length, "oldest context is trimmed when needed");
+  assert.equal(priorRequests.length, 20, "the caller's saved revision history remains unchanged");
+  assert.equal(request.priorRevisionRequests.at(-1), priorRequests.at(-1), "the newest accepted requests stay available");
+  assert.equal(request.revisionRequest, "Keep the quiet option and update the welcome plan.");
+});
 
 function makeEditedPlan() {
   const base = createSavedPlan(EXAMPLE_BRIEF, EXAMPLE_BRIEF, EXAMPLE_PROPOSAL, "revision-plan", CREATED_AT, "ai");

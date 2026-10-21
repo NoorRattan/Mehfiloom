@@ -76,7 +76,7 @@ import {
   saveWorkspaceToStorage,
 } from "@/lib/plan-storage";
 import { dateInTimeZone, resolveZonedDateTime } from "@/lib/schedule";
-import { acceptPlanRevision, diffPlanRevision, restorePreviousPlanRevision, type PendingPlanRevision } from "@/lib/plan-revisions";
+import { acceptPlanRevision, diffPlanRevision, restorePreviousPlanRevision, revisionGenerationRequest, type PendingPlanRevision } from "@/lib/plan-revisions";
 import { PaymentHistoryPanel, type PaymentDraft } from "./PaymentHistoryPanel";
 import { CostAdjustmentsEditor, type CostAdjustmentDraft } from "./CostAdjustmentsEditor";
 
@@ -472,7 +472,9 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
       const response = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(isRevision ? { brief: parsedBrief.data, revisionRequest: requestedChange } : parsedBrief.data),
+        body: JSON.stringify(isRevision
+          ? revisionGenerationRequest(parsedBrief.data, basePlan.revisionHistory.map((entry) => entry.request), requestedChange)
+          : parsedBrief.data),
       });
       const payload = (await response.json()) as { result?: PlanResult; error?: { message?: string } };
       if (!response.ok || !payload.result) {
@@ -1072,7 +1074,7 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
               {error && <div id="brief-error" className="form-error" role="alert"><CircleAlert size={17} /><span>{error}</span></div>}
               <p className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">{generationAnnouncement}</p>
               <button className="generate-button" type="submit" aria-busy={generating} disabled={generating || pendingRevision !== null}>{generating ? <span className="button-spinner" aria-hidden="true" /> : <Sparkles size={17} />}{" "}<span>{generating ? activePlan.origin === "ai" ? "Drafting your revision…" : "Weaving your first draft…" : activePlan.origin === "ai" ? "Review a revision" : "Create my plan"}</span>{!generating && <ArrowRight size={17} />}</button>
-              <p className="privacy-note"><span className="privacy-dot" /> Live planning sends your event brief and any revision request to Groq. Groq says inference data is not retained by default, but may be logged for up to 30 days for reliability or abuse monitoring. Use fictional details and avoid real guest names or sensitive information. <a href="https://console.groq.com/docs/your-data" target="_blank" rel="noreferrer">Groq data policy</a>.</p>
+              <p className="privacy-note"><span className="privacy-dot" /> Live planning sends your event brief to Groq. Revisions also send the current request and earlier accepted revision requests so stated preferences and exclusions can carry forward. Groq says inference data is not retained by default, but may be logged for up to 30 days for reliability or abuse monitoring. Use fictional details and avoid real guest names or sensitive information. <a href="https://console.groq.com/docs/your-data" target="_blank" rel="noreferrer">Groq data policy</a>.</p>
             </form>
           </aside>
 

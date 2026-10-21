@@ -1,4 +1,4 @@
-import { buildPlanResult, parseBudgetMinor, type PlannerProposal } from "./planner.ts";
+import { buildPlanResult, parseBudgetMinor, type EventBrief, type PlannerProposal } from "./planner.ts";
 import { validateSavedPlan, type PlanRevisionSnapshot, type SavedPlan, type TaskRecord, type VendorRecord } from "./plan-store.ts";
 
 export type RevisionChange = {
@@ -12,6 +12,25 @@ export type PendingPlanRevision = {
   request: string;
   changes: RevisionChange[];
 };
+
+const MAX_REVISION_CONTEXT_BODY_BYTES = 15 * 1024;
+
+export function revisionGenerationRequest(
+  brief: EventBrief,
+  priorRequests: string[],
+  revisionRequest: string,
+) {
+  const payload = {
+    brief,
+    priorRevisionRequests: [...priorRequests],
+    revisionRequest,
+  };
+  while (payload.priorRevisionRequests.length > 0
+    && new TextEncoder().encode(JSON.stringify(payload)).byteLength > MAX_REVISION_CONTEXT_BODY_BYTES) {
+    payload.priorRevisionRequests.shift();
+  }
+  return payload;
+}
 
 function same(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);

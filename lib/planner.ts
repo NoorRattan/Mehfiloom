@@ -183,6 +183,7 @@ export const generationRequestSchema = z.union([
   eventBriefSchema.transform((brief) => ({ brief })),
   z.object({
     brief: eventBriefSchema,
+    priorRevisionRequests: z.array(z.string().trim().min(8).max(500)).max(20).default([]),
     revisionRequest: z.string().trim().min(8).max(500),
   }).strict(),
 ]);
