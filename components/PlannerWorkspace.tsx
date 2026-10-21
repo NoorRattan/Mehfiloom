@@ -56,6 +56,7 @@ import {
   parsePlanDocument,
   reidentifyPlan,
   removeCostPayment,
+  resolveTaskDate,
   savedPlanSchema,
   serializePlanDocument,
   taskScheduleConflicts,
@@ -71,6 +72,7 @@ import {
   loadWorkspaceFromStorage,
   saveWorkspaceToStorage,
 } from "@/lib/plan-storage";
+import { dateInTimeZone, resolveZonedDateTime } from "@/lib/schedule";
 import { acceptPlanRevision, diffPlanRevision, restorePreviousPlanRevision, type PendingPlanRevision } from "@/lib/plan-revisions";
 import { PaymentHistoryPanel, type PaymentDraft } from "./PaymentHistoryPanel";
 import { CostAdjustmentsEditor, type CostAdjustmentDraft } from "./CostAdjustmentsEditor";
@@ -124,7 +126,7 @@ function briefIssueTarget(path: PropertyKey[], sessions: EventBrief["sessions"])
   if (field === "sessions" && typeof index === "number") {
     const sessionId = sessions[index]?.id;
     if (sessionId) {
-      const suffix = detail === "date" ? "date" : detail === "guestCount" ? "guests" : "name";
+      const suffix = detail === "date" ? "date" : detail === "startTime" ? "time" : detail === "guestCount" ? "guests" : "name";
       return `session-${sessionId}-${suffix}`;
     }
     return sessions[0] ? `session-${sessions[0].id}-name` : "session-builder-title";
@@ -134,6 +136,9 @@ function briefIssueTarget(path: PropertyKey[], sessions: EventBrief["sessions"])
     eventName: "event-name",
     location: "event-location",
     eventDate: "event-date",
+    timeZone: "event-timezone",
+    eventTime: "event-time",
+    eventTimeOccurrence: "event-time",
     guestCount: "guest-count",
     sessions: "session-builder-title",
     budgetAmount: "budget-amount",
@@ -150,11 +155,22 @@ function moneyRange(lowerMinor: number, upperMinor: number, currency: string): s
     : `${formatMoney(lowerMinor, currency)}–${formatMoney(upperMinor, currency)}`;
 }
 
-function localDateOnly(date = new Date()): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+function formatZonedInstant(instant: string | null, timeZone: string | null): string | null {
+  if (!instant || !timeZone) return null;
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      timeZone,
+      weekday: "short",
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short",
+    }).format(new Date(instant));
+  } catch {
+    return null;
+  }
 }
 
 function downloadJson(name: string, content: string) {
@@ -234,6 +250,7 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
     let active = true;
     async function loadFromDevice() {
       await Promise.resolve();
+      let timeZone: string | null = null;
       try {
         const loaded = loadWorkspaceFromStorage(window.localStorage);
         if (!active) return;
@@ -241,15 +258,19 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
           const savedActivePlan = loaded.plans.find((item) => item.id === loaded.activePlanId);
           if (savedActivePlan?.draftBrief.eventType === initialEventType) {
             setWorkspace(loaded);
+            timeZone = savedActivePlan.draftBrief.timeZone;
           } else {
             const matchingPlan = loaded.plans.find((item) => item.draftBrief.eventType === initialEventType);
             if (matchingPlan) {
               setWorkspace({ ...loaded, activePlanId: matchingPlan.id });
+              timeZone = matchingPlan.draftBrief.timeZone;
             } else if (loaded.plans.length < MAX_SAVED_PLANS) {
               const nextPlan = makeSeedPlan(initialEventType, makeId());
               setWorkspace({ ...loaded, activePlanId: nextPlan.id, plans: [...loaded.plans, nextPlan] });
+              timeZone = nextPlan.draftBrief.timeZone;
             } else {
               setWorkspace(loaded);
+              timeZone = savedActivePlan?.draftBrief.timeZone ?? null;
               setImportMessage(`Your device already has ${MAX_SAVED_PLANS} plans. Choose an existing ${EVENT_LABELS[initialEventType].toLowerCase()} plan or export and remove one before creating another.`);
             }
           }
@@ -264,7 +285,7 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
         setStorageStatus("Saved plans need attention");
       } finally {
         if (active) {
-          setTodayDate(localDateOnly());
+          setTodayDate(dateInTimeZone(new Date(), timeZone) ?? "");
           setStorageReady(true);
         }
       }
@@ -308,7 +329,23 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
   const validatedPlan = savedPlanSchema.safeParse(activePlan);
   const budgetHealth = validatedPlan.success ? calculateBudgetHealth(activePlan) : null;
   const taskById = new Map(activePlan.tasks.map((task) => [task.id, task]));
-  const scheduleConflicts = taskScheduleConflicts(activePlan.tasks, submittedBrief.eventDate, todayDate);
+  const scheduleConflicts = taskScheduleConflicts(activePlan.tasks, brief.eventDate, todayDate, brief.sessions);
+  const printScheduleConflicts = taskScheduleConflicts(
+    activePlan.tasks,
+    submittedBrief.eventDate,
+    submittedBrief.timeZone === brief.timeZone ? todayDate : "",
+    submittedBrief.sessions,
+  );
+  const eventTimeResolution = resolveZonedDateTime(brief.eventDate, brief.eventTime, brief.timeZone, brief.eventTimeOccurrence);
+  const eventTimeDisplay = formatZonedInstant(eventTimeResolution.instant, brief.timeZone);
+  const submittedEventTimeDisplay = formatZonedInstant(
+    resolveZonedDateTime(submittedBrief.eventDate, submittedBrief.eventTime, submittedBrief.timeZone, submittedBrief.eventTimeOccurrence).instant,
+    submittedBrief.timeZone,
+  );
+  const sessionTimeResolutions = new Map(brief.sessions.map((session) => [
+    session.id,
+    resolveZonedDateTime(session.date, session.startTime, brief.timeZone, session.startTimeOccurrence),
+  ]));
   const guestsOverExpected = activePlan.guestSummary.confirmed !== null && activePlan.guestSummary.confirmed > activePlan.guestSummary.expected;
   const quoteMinimumsOverExpected = activePlan.budget.items.filter((item) => item.minimumGuestCount !== null && item.minimumGuestCount > expectedGuestsForCostItem(activePlan, item));
   const sessionsOverExpected = activePlan.sessionAttendance.filter((attendance) => {
@@ -341,6 +378,8 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
   }
 
   function selectPlan(planId: string) {
+    const selectedPlan = workspace.plans.find((item) => item.id === planId);
+    setTodayDate(dateInTimeZone(new Date(), selectedPlan?.draftBrief.timeZone ?? null) ?? "");
     updateWorkspace((current) => ({ ...current, activePlanId: planId }));
     clearEditorState();
   }
@@ -355,7 +394,17 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
   }
 
   function updateBrief<K extends keyof EventBrief>(field: K, value: EventBrief[K]) {
-    updateActivePlan((current) => ({ ...current, draftBrief: { ...current.draftBrief, [field]: value } }));
+    updateActivePlan((current) => {
+      const draftBrief = { ...current.draftBrief, [field]: value } as EventBrief;
+      if (field === "timeZone") {
+        draftBrief.eventTimeOccurrence = null;
+        draftBrief.sessions = draftBrief.sessions.map((session) => ({ ...session, startTimeOccurrence: null }));
+      } else if (field === "eventDate" || field === "eventTime") {
+        draftBrief.eventTimeOccurrence = null;
+      }
+      return { ...current, draftBrief };
+    });
+    if (field === "timeZone") setTodayDate(dateInTimeZone(new Date(), value as EventBrief["timeZone"]) ?? "");
     setError("");
     setErrorTargetId(null);
   }
@@ -449,8 +498,14 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
           const costsByCategory = new Set(retainedCosts.map((cost) => cost.category));
           const defaultCosts = replacement.budget.items.filter((cost) => !costsByCategory.has(cost.category));
           const tasks = replacement.tasks.map((task) => {
-            const previous = item.tasks.find((candidate) => candidate.title === task.title);
-            return previous ? { ...task, status: previous.status, ownerLabel: previous.ownerLabel } : task;
+            const previous = item.tasks.find((candidate) => candidate.title === task.title && candidate.sessionId === task.sessionId);
+            return previous ? {
+              ...task,
+              status: previous.status,
+              ownerLabel: previous.ownerLabel,
+              dueDate: previous.dueDate,
+              relativeOffsetDays: previous.relativeOffsetDays,
+            } : task;
           });
           const vendors = replacement.vendors.map((vendor) => {
             const previous = item.vendors.find((candidate) => candidate.category.toLowerCase() === vendor.category.toLowerCase());
@@ -540,6 +595,7 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
     if (activePlan.edited && !window.confirm("Replace this plan with the synthetic example?")) return;
     const exampleBrief = exampleBriefForEvent(brief.eventType, brief);
     const example = createSavedPlan(exampleBrief, exampleBrief, getEventTemplateProposal(brief.eventType), activePlan.id, new Date().toISOString());
+    setTodayDate(dateInTimeZone(new Date(), exampleBrief.timeZone) ?? "");
     updateWorkspace((current) => ({ ...current, plans: current.plans.map((item) => item.id === current.activePlanId ? example : item) }));
     clearEditorState();
   }
@@ -747,6 +803,7 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
     }
     try {
       const imported = reidentifyPlan(parsePlanDocument(await file.text()));
+      setTodayDate(dateInTimeZone(new Date(), imported.draftBrief.timeZone) ?? "");
       updateWorkspace((current) => ({ ...current, activePlanId: imported.id, plans: [...current.plans, imported] }));
       clearEditorState();
       setImportMessage("Plan imported and given new local IDs. Review its costs and bookings.");
@@ -790,6 +847,7 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
     try {
       clearWorkspaceStorage(window.localStorage);
       const fresh = createWorkspace(makeSeedPlan(initialEventType, makeId()));
+      setTodayDate(dateInTimeZone(new Date(), fresh.plans[0]?.draftBrief.timeZone ?? null) ?? "");
       setWorkspace(fresh);
       setStorageLoadFailed(false);
       setStorageError("");
@@ -967,14 +1025,26 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
               <div className="form-grid">
                 <label className="field field-full"><span>Event name</span><input id="event-name" value={brief.eventName} onChange={(e) => updateBrief("eventName", e.target.value)} maxLength={80} required aria-invalid={errorTargetId === "event-name" || undefined} aria-describedby={errorTargetId === "event-name" ? "brief-error" : undefined} /></label>
                 <label className="field"><span>Where</span><span className="input-with-icon"><MapPin size={16} /><input id="event-location" value={brief.location} onChange={(e) => updateBrief("location", e.target.value)} maxLength={100} required aria-invalid={errorTargetId === "event-location" || undefined} aria-describedby={errorTargetId === "event-location" ? "brief-error" : undefined} /></span></label>
-                <label className="field"><span>Event date <small>optional</small></span><span className="input-with-icon"><CalendarDays size={16} /><input id="event-date" type="date" value={brief.eventDate} onChange={(e) => updateBrief("eventDate", e.target.value)} aria-invalid={errorTargetId === "event-date" || undefined} aria-describedby={errorTargetId === "event-date" ? "brief-error" : undefined} /></span></label>
+                <label className="field"><span>Event date <small>optional</small></span><span className="input-with-icon"><CalendarDays size={16} /><input id="event-date" type="date" value={brief.eventDate} onInput={(event) => updateBrief("eventDate", event.currentTarget.value)} aria-invalid={errorTargetId === "event-date" || undefined} aria-describedby={errorTargetId === "event-date" ? "brief-error" : undefined} /></span></label>
+                <label className="field"><span>Event time zone <small>optional until time is known</small></span><input id="event-timezone" list="iana-time-zones" value={brief.timeZone ?? ""} onChange={(event) => updateBrief("timeZone", event.target.value.trim() || null)} placeholder="Asia/Kolkata" aria-invalid={errorTargetId === "event-timezone" || undefined} aria-describedby={errorTargetId === "event-timezone" ? "timezone-help brief-error" : "timezone-help"} /><small id="timezone-help" className="field-hint">Use an IANA name. Calendar dates stay as entered; local times use this zone, never the computer’s time zone.</small></label>
+                <div className="field"><label htmlFor="event-time"><span>Local event start time <small>optional</small></span><input id="event-time" type="text" inputMode="numeric" maxLength={5} value={brief.eventTime} onChange={(event) => updateBrief("eventTime", event.currentTarget.value)} placeholder="e.g. 18:30" aria-invalid={errorTargetId === "event-time" || undefined} aria-describedby={errorTargetId === "event-time" ? "event-time-help brief-error" : "event-time-help"} /></label>
+                  {eventTimeResolution.status === "ambiguous" && <label className="time-occurrence-choice">This time occurs twice<select aria-label="Choose which repeated event time" value={brief.eventTimeOccurrence ?? ""} onChange={(event) => updateBrief("eventTimeOccurrence", event.target.value === "" ? null : event.target.value as "earlier" | "later")}><option value="">Choose occurrence</option><option value="earlier">Earlier occurrence</option><option value="later">Later occurrence</option></select></label>}
+                  <small id="event-time-help" className="field-hint">{eventTimeDisplay ? `Resolves to ${eventTimeDisplay}.` : eventTimeResolution.status === "nonexistent" ? "This local time does not exist because clocks move forward." : eventTimeResolution.status === "ambiguous" ? "Choose the earlier or later occurrence of this repeated local time." : brief.eventTime ? "Set the date and IANA time zone to resolve this local time." : "Enter a local time only when you know the event’s time zone."}</small>
+                </div>
+                <datalist id="iana-time-zones">{["UTC", "Asia/Kolkata", "Asia/Dubai", "Europe/London", "Europe/Paris", "America/New_York", "America/Los_Angeles", "Australia/Sydney"].map((zone) => <option key={zone} value={zone} />)}</datalist>
                 <label className="field"><span>Unique guests across the event</span><span className="input-with-icon"><UsersRound size={16} /><input id="guest-count" type="number" min={1} max={10000} step={1} value={brief.guestCount} onChange={(e) => updateBrief("guestCount", Number(e.target.value))} required aria-invalid={errorTargetId === "guest-count" || undefined} aria-describedby={errorTargetId === "guest-count" ? "brief-error" : undefined} /></span><small className="field-hint">An overall estimate. People may attend more than one session, so these counts are not added together.</small></label>
                 <div className="field-full session-builder" role="group" aria-labelledby="session-builder-title">
-                  <div className="session-builder-heading"><span id="session-builder-title" tabIndex={errorTargetId === "session-builder-title" ? -1 : undefined} aria-describedby={errorTargetId === "session-builder-title" ? "brief-error" : undefined}>Functions or sessions <small>optional</small></span><button className="text-button" type="button" disabled={brief.sessions.length >= 12} onClick={() => updateBrief("sessions", [...brief.sessions, { id: makeId(), name: "", date: "", guestCount: brief.guestCount }])}><Plus size={14} /> Add a session</button></div>
-                  <p className="field-hint">Use this for separate wedding functions, birthday activities, or community-event time blocks. Enter only the guests expected at each one.</p>
+                  <div className="session-builder-heading"><span id="session-builder-title" tabIndex={errorTargetId === "session-builder-title" ? -1 : undefined} aria-describedby={errorTargetId === "session-builder-title" ? "brief-error" : undefined}>Functions or sessions <small>optional</small></span><button className="text-button" type="button" disabled={brief.sessions.length >= 12} onClick={() => updateBrief("sessions", [...brief.sessions, { id: makeId(), name: "", date: "", startTime: "", startTimeOccurrence: null, guestCount: brief.guestCount }])}><Plus size={14} /> Add a session</button></div>
+                  <p className="field-hint">Use this for separate wedding functions, birthday activities, or community-event time blocks. Enter only the guests expected at each one. Each local start time uses the event time zone above.</p>
                   {brief.sessions.map((session, index) => <div className="session-row" key={session.id}>
                     <label>Session name<input id={`session-${session.id}-name`} value={session.name} onChange={(event) => updateBrief("sessions", brief.sessions.map((item) => item.id === session.id ? { ...item, name: event.target.value } : item))} maxLength={80} placeholder={`Session ${index + 1}`} required aria-invalid={errorTargetId === `session-${session.id}-name` || undefined} aria-describedby={errorTargetId === `session-${session.id}-name` ? "brief-error" : undefined} /></label>
-                    <label>Date <small>optional</small><input id={`session-${session.id}-date`} type="date" value={session.date} onChange={(event) => updateBrief("sessions", brief.sessions.map((item) => item.id === session.id ? { ...item, date: event.target.value } : item))} aria-invalid={errorTargetId === `session-${session.id}-date` || undefined} aria-describedby={errorTargetId === `session-${session.id}-date` ? "brief-error" : undefined} /></label>
+                    <div className="session-date-time">
+                      <label>Date <small>optional</small><input id={`session-${session.id}-date`} type="date" value={session.date} onInput={(event) => updateBrief("sessions", brief.sessions.map((item) => item.id === session.id ? { ...item, date: event.currentTarget.value, startTimeOccurrence: null } : item))} aria-invalid={errorTargetId === `session-${session.id}-date` || undefined} aria-describedby={errorTargetId === `session-${session.id}-date` ? "brief-error" : undefined} /></label>
+                      <label>Local start time <small>optional</small><input id={`session-${session.id}-time`} type="text" inputMode="numeric" maxLength={5} placeholder="e.g. 18:30" value={session.startTime} onChange={(event) => updateBrief("sessions", brief.sessions.map((item) => item.id === session.id ? { ...item, startTime: event.currentTarget.value, startTimeOccurrence: null } : item))} aria-invalid={errorTargetId === `session-${session.id}-time` || undefined} aria-describedby={errorTargetId === `session-${session.id}-time` ? "brief-error" : undefined} />
+                        {sessionTimeResolutions.get(session.id)?.status === "ambiguous" && <select aria-label={`Choose which repeated start time for ${session.name || `session ${index + 1}`}`} value={session.startTimeOccurrence ?? ""} onChange={(event) => updateBrief("sessions", brief.sessions.map((item) => item.id === session.id ? { ...item, startTimeOccurrence: event.target.value === "" ? null : event.target.value as "earlier" | "later" } : item))}><option value="">Choose occurrence</option><option value="earlier">Earlier occurrence</option><option value="later">Later occurrence</option></select>}
+                        {formatZonedInstant(sessionTimeResolutions.get(session.id)?.instant ?? null, brief.timeZone) && <small className="field-hint">{formatZonedInstant(sessionTimeResolutions.get(session.id)?.instant ?? null, brief.timeZone)}</small>}
+                      </label>
+                    </div>
                     <label>Expected guests<input id={`session-${session.id}-guests`} type="number" min={1} max={10000} step={1} value={session.guestCount} onChange={(event) => updateBrief("sessions", brief.sessions.map((item) => item.id === session.id ? { ...item, guestCount: Number(event.target.value) } : item))} required aria-invalid={errorTargetId === `session-${session.id}-guests` || undefined} aria-describedby={errorTargetId === `session-${session.id}-guests` ? "brief-error" : undefined} /></label>
                     <button className="icon-button session-remove" type="button" aria-label={`Remove ${session.name || `session ${index + 1}`}`} onClick={() => updateBrief("sessions", brief.sessions.filter((item) => item.id !== session.id))}><Trash2 size={15} /></button>
                   </div>)}
@@ -1021,9 +1091,10 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
             <div className="section-heading budget-heading"><div><span className="section-label">THE BUDGET PICTURE</span><h3>Give every part a place</h3></div><span className="budget-total">{formatMoney(plan.totalMinor, plan.currency)} <small>planning cap</small></span></div>
             <div className="budget-surface"><div className="budget-topline"><span><CircleCheck size={16} /> Allocation adds up to your cap</span><small>Planning targets · not vendor quotes</small></div><div className="budget-grid">{plan.lines.map((line, index) => { const percentage = Math.max(0, Math.min(100, (line.amountMinor / Math.max(budgetTotal, 1)) * 100)); const category = BUDGET_CATEGORIES.find((item) => item === line.category); return <div className="budget-line" key={`${line.category}-${index}`}><div className="budget-line-head"><span>{category ? CATEGORY_LABELS[category] : line.category}</span><strong>{formatMoney(line.amountMinor, plan.currency)}</strong></div><div className="budget-track"><span className={`budget-fill fill-${index % 5}`} style={{ width: `${percentage}%` }} /></div><p>{line.rationale}</p></div>; })}</div><div className="budget-footnote">The split comes from relative priorities and exact arithmetic. Local costs, tax, and vendor availability still need checking.</div></div>
 
-            <div className="section-heading timeline-heading"><div><span className="section-label">SMALL STEPS, GOOD MOMENTUM</span><h3>Your next steps <span className="task-count">{completeCount}/{activePlan.tasks.length} done</span></h3><p className="card-intro">Suggested timing is a starting point. Adjust it to your date, event scale, local availability, and confirmed requirements.</p></div><span className="heading-icon"><CalendarDays size={18} /></span></div>
+            <div className="section-heading timeline-heading"><div><span className="section-label">SMALL STEPS, GOOD MOMENTUM</span><h3>Your next steps <span className="task-count">{completeCount}/{activePlan.tasks.length} done</span></h3><p className="card-intro">Suggested timing is a starting point. Relative dates preview against the current brief and move with event or function dates; fixed due dates stay as entered.</p></div><span className="heading-icon"><CalendarDays size={18} /></span></div>
             <div className="timeline-list">
               {activePlan.tasks.map((task, index) => {
+                const taskDates = resolveTaskDate(task, brief.eventDate, brief.sessions);
                 const dependencyTasks = task.dependencyIds
                   .map((dependencyId) => taskById.get(dependencyId))
                   .filter((dependency): dependency is TaskRecord => dependency !== undefined);
@@ -1057,7 +1128,8 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
                         <input aria-label={`Task ${index + 1} timing`} value={task.timing} onChange={(event) => updateTask(task.id, (current) => ({ ...current, timing: event.target.value }))} maxLength={80} />
                         <div className="task-meta-edit">
                           <label>Owner<input aria-label={`Task ${index + 1} owner`} value={task.ownerLabel} onChange={(event) => updateTask(task.id, (current) => ({ ...current, ownerLabel: event.target.value }))} maxLength={80} /></label>
-                          <label>Due date<input aria-label={`Task ${index + 1} due date`} type="date" value={task.dueDate ?? ""} onChange={(event) => updateTask(task.id, (current) => ({ ...current, dueDate: event.target.value || null }))} /></label>
+                          <label>Fixed due date<input aria-label={`Task ${index + 1} fixed due date`} type="date" value={task.dueDate ?? ""} onInput={(event) => { const dueDate = event.currentTarget.value || null; updateTask(task.id, (current) => ({ ...current, dueDate })); }} /><small>Kept as entered, even if the event date changes.</small></label>
+                          <label>Relative offset in calendar days<input aria-label={`Task ${index + 1} relative offset in calendar days`} type="number" min={-3650} max={3650} step={1} value={task.relativeOffsetDays ?? ""} onInput={(event) => { const value = event.currentTarget.value; updateTask(task.id, (current) => ({ ...current, relativeOffsetDays: value === "" ? null : Number(value) })); }} /><small>{taskDates.relativeDate ? `Target ${taskDates.relativeDate} from ${task.sessionId ? "function" : "event"} date ${taskDates.anchorDate}.` : `Negative is before; positive is after. Anchored to the ${task.sessionId ? "assigned function" : "event"} date.`}</small></label>
                           <label>Session / function<select aria-label={`Task ${index + 1} session`} value={task.sessionId ?? ""} onChange={(event) => updateTask(task.id, (current) => ({ ...current, sessionId: event.target.value || null }))}><option value="">Shared / whole event</option>{submittedBrief.sessions.map((session) => <option value={session.id} key={session.id}>{session.name}</option>)}</select></label>
                         </div>
                         <fieldset className="task-dependency-edit">
@@ -1089,7 +1161,8 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
                         </fieldset>
                       </> : <>
                         <strong>{task.title}</strong>
-                        <span><CalendarDays size={13} />{task.dueDate || task.timing} · {task.ownerLabel} · {sessionScopeLabel(submittedBrief.sessions, task.sessionId)}</span>
+                        <span><CalendarDays size={13} />{taskDates.dueDate || task.timing} · {task.ownerLabel} · {sessionScopeLabel(brief.sessions, task.sessionId)}</span>
+                        {task.relativeOffsetDays !== null && <small className="task-date-note">Relative target: {taskDates.relativeDate ?? "waiting for its anchor date"}{taskDates.fixedDate ? ` · fixed date stays ${taskDates.fixedDate}` : " · no fixed date"}</small>}
                         {dependencyTasks.length > 0 && <span className="task-dependency-summary">Depends on: {dependencyTasks.map((dependency) => dependency.title).join(", ")}</span>}
                       </>}
                       {blocked && <span className="task-blocked">Waiting on: {unmetDependencyTasks.map((dependency) => dependency.title).join(", ")}</span>}
@@ -1125,7 +1198,7 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
           <header className="print-document-heading">
             <span>MEHFILOOM · PRIVATE PLANNING COPY</span>
             <h1>{submittedBrief.eventName || "Untitled celebration"}</h1>
-            <p>{EVENT_LABELS[submittedBrief.eventType]} · {submittedBrief.location || "Location to confirm"} · {submittedBrief.eventDate || "Date to confirm"}</p>
+            <p>{EVENT_LABELS[submittedBrief.eventType]} · {submittedBrief.location || "Location to confirm"} · {submittedBrief.eventDate || "Date to confirm"}{submittedBrief.timeZone ? ` · ${submittedBrief.timeZone}` : ""}{submittedEventTimeDisplay ? ` · ${submittedEventTimeDisplay}` : ""}</p>
             <dl className="print-summary-grid">
               <div><dt>Expected guests</dt><dd>{submittedBrief.guestCount}</dd></div>
               <div><dt>Budget cap</dt><dd>{formatMoney(activePlan.budget.capMinor, currency)}</dd></div>
@@ -1146,7 +1219,9 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
               <h3>Functions and sessions</h3>
               <ul>{submittedBrief.sessions.map((session) => {
                 const attendance = activePlan.sessionAttendance.find((item) => item.sessionId === session.id);
-                return <li key={session.id}>{session.name || "Unnamed session"} · {session.date || "Date to confirm"} · {session.guestCount} expected guests · {attendance?.confirmedGuests ?? "not confirmed"} confirmed</li>;
+                const sessionTime = resolveZonedDateTime(session.date, session.startTime, submittedBrief.timeZone, session.startTimeOccurrence);
+                const sessionTimeDisplay = formatZonedInstant(sessionTime.instant, submittedBrief.timeZone);
+                return <li key={session.id}>{session.name || "Unnamed session"} · {session.date || "Date to confirm"}{sessionTimeDisplay ? ` · ${sessionTimeDisplay}` : ""} · {session.guestCount} expected guests · {attendance?.confirmedGuests ?? "not confirmed"} confirmed</li>;
               })}</ul>
             </div>}
           </section>
@@ -1181,8 +1256,9 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
             <table className="print-table">
               <thead><tr><th scope="col">Task</th><th scope="col">Timing</th><th scope="col">Owner and session</th><th scope="col">Status</th></tr></thead>
               <tbody>{activePlan.tasks.map((task) => {
-                const conflicts = scheduleConflicts.get(task.id) ?? [];
-                return <tr key={task.id}><th scope="row">{task.title}{task.dependencyIds.length > 0 && <small>Depends on: {task.dependencyIds.map((id) => taskById.get(id)?.title).filter(Boolean).join(", ")}</small>}{conflicts.length > 0 && <small className="print-warning">{conflicts.join(" ")}</small>}</th><td>{task.dueDate || task.timing}</td><td>{task.ownerLabel} · {sessionScopeLabel(submittedBrief.sessions, task.sessionId)}</td><td>{task.status.replaceAll("_", " ")}</td></tr>;
+                const conflicts = printScheduleConflicts.get(task.id) ?? [];
+                const taskDates = resolveTaskDate(task, submittedBrief.eventDate, submittedBrief.sessions);
+                return <tr key={task.id}><th scope="row">{task.title}{task.dependencyIds.length > 0 && <small>Depends on: {task.dependencyIds.map((id) => taskById.get(id)?.title).filter(Boolean).join(", ")}</small>}{task.relativeOffsetDays !== null && <small>Relative target: {taskDates.relativeDate ?? "waiting for anchor date"}{taskDates.fixedDate ? ` · fixed date remains ${taskDates.fixedDate}` : ""}</small>}{conflicts.length > 0 && <small className="print-warning">{conflicts.join(" ")}</small>}</th><td>{taskDates.dueDate || task.timing}</td><td>{task.ownerLabel} · {sessionScopeLabel(submittedBrief.sessions, task.sessionId)}</td><td>{task.status.replaceAll("_", " ")}</td></tr>;
               })}</tbody>
             </table>
           </section>

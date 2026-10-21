@@ -33,6 +33,8 @@ function makeEditedPlan() {
     proposal: { ...base.proposal, conceptTitle: "The host's chosen celebration" },
     tasks: base.tasks.map((task, index) => index === 0
       ? { ...task, status: "done", ownerLabel: "Family team", dueDate: "2026-12-10" }
+      : index === 1
+        ? { ...task, relativeOffsetDays: -7 }
       : task),
     vendors: base.vendors.map((vendor, index) => index === 0
       ? { ...vendor, name: "Host-selected venue", availability: "confirmed", booking: "host_recorded", checkedAt: EDITED_AT, notes: "Accessibility details confirmed by host." }
@@ -124,6 +126,8 @@ test("accepting a revision recalculates the cap and carries host work forward", 
   assert.equal(revisedTask.status, "done");
   assert.equal(revisedTask.ownerLabel, "Family team");
   assert.equal(revisedTask.dueDate, "2026-12-10");
+  assert.equal(revisedTask.relativeOffsetDays, null);
+  assert.equal(revised.tasks.find((task) => task.id === current.tasks[1].id).relativeOffsetDays, -7, "relative task offsets survive an accepted revision even when the task was not otherwise edited");
   assert.equal(revisedTask.timing, current.tasks[0].timing, "a manually preserved task remains intact alongside the new proposal");
   assert.equal(revisedVendor.name, "Host-selected venue");
   assert.equal(revisedVendor.availability, "confirmed");

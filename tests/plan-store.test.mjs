@@ -19,6 +19,8 @@ import {
   parseWorkspaceJson,
   reidentifyPlan,
   removeCostPayment,
+  resolveTaskDate,
+  SECOND_OLDER_WORKSPACE_STORAGE_KEY,
   savedPlanSchema,
   serializePlanDocument,
   serializeWorkspace,
@@ -112,6 +114,29 @@ test("task schedule reports prerequisite and event-date conflicts", () => {
   assert.deepEqual(conflicts.get(afterEvent.id), ["This task is due 2026-12-22, after the event date 2026-12-20."]);
   assert.deepEqual(conflicts.get(tasks[3].id), ["This task was due 2026-12-09 and is still open."]);
   assert.equal(taskScheduleConflicts(tasks, "", "2026-12-11").has(afterEvent.id), false, "a task date cannot be compared with an unknown event date");
+});
+
+test("relative task dates follow event or function calendar dates while fixed dates stay unchanged", () => {
+  const plan = makePlan();
+  const task = { ...plan.tasks[0], dueDate: null, relativeOffsetDays: -2, sessionId: null };
+  const firstResolution = resolveTaskDate(task, "2027-03-15");
+  assert.deepEqual(firstResolution, { anchorDate: "2027-03-15", relativeDate: "2027-03-13", fixedDate: null, dueDate: "2027-03-13" });
+  assert.equal(resolveTaskDate(task, "2027-03-16").dueDate, "2027-03-14", "changing the event date moves only the relative target by a calendar day");
+
+  const session = { id: "function-one", date: "2027-03-14" };
+  const functionTask = { ...task, sessionId: session.id, relativeOffsetDays: 1 };
+  assert.equal(resolveTaskDate(functionTask, "2027-03-20", [session]).dueDate, "2027-03-15", "function tasks use their assigned function date as the anchor");
+
+  const fixedTask = { ...task, dueDate: "2027-03-11" };
+  const fixedResolution = resolveTaskDate(fixedTask, "2027-03-15");
+  assert.equal(fixedResolution.dueDate, "2027-03-11");
+  assert.equal(fixedResolution.relativeDate, "2027-03-13");
+  const conflicts = taskScheduleConflicts([fixedTask], "2027-03-15", "", []);
+  assert.ok(conflicts.get(fixedTask.id).some((message) => message.includes("fixed due date remains 2027-03-11")));
+
+  const unresolved = resolveTaskDate(functionTask, "2027-03-20", [{ id: session.id, date: "" }]);
+  assert.equal(unresolved.dueDate, null);
+  assert.equal(taskScheduleConflicts([functionTask], "2027-03-20", "", [{ id: session.id, date: "" }]).has(functionTask.id), true);
 });
 
 test("versioned workspace save and reload preserves multiple complete plans", () => {
@@ -229,7 +254,7 @@ test("legacy v2 storage key and plan records migrate without losing payment tota
     activePlanId: plan.id,
     plans: [plan],
   };
-  const values = new Map([[OLDER_WORKSPACE_STORAGE_KEY, JSON.stringify(legacyWorkspace)]]);
+  const values = new Map([[SECOND_OLDER_WORKSPACE_STORAGE_KEY, JSON.stringify(legacyWorkspace)]]);
   const loaded = loadWorkspaceFromStorage({ getItem(key) { return values.get(key) ?? null; } });
 
   assert.equal(loaded.schemaVersion, WORKSPACE_VERSION);
@@ -256,11 +281,38 @@ test("legacy v3 storage migrates fee metadata to sourced amount defaults", () =>
     activePlanId: plan.id,
     plans: [plan],
   };
-  const values = new Map([[LEGACY_WORKSPACE_STORAGE_KEY, JSON.stringify(legacyWorkspace)]]);
+  const values = new Map([[OLDER_WORKSPACE_STORAGE_KEY, JSON.stringify(legacyWorkspace)]]);
   const loaded = loadWorkspaceFromStorage({ getItem(key) { return values.get(key) ?? null; } });
 
   assert.equal(loaded.schemaVersion, WORKSPACE_VERSION);
   assert.ok(loaded.plans[0].budget.items.every((item) => item.taxesIncluded === null && item.chargesReviewed === false && item.adjustments.length === 0));
+});
+
+test("legacy v4 workspace migrates to explicit timezone and relative-date defaults", () => {
+  const plan = structuredClone(makePlan("legacy-v4-plan"));
+  plan.schemaVersion = 4;
+  for (const brief of [plan.draftBrief, plan.planBrief]) {
+    delete brief.timeZone;
+    delete brief.eventTime;
+    delete brief.eventTimeOccurrence;
+    brief.sessions = [{ id: "legacy-function", name: "Welcome function", date: "2027-02-13", guestCount: 90 }];
+    brief.sessions.forEach((session) => {
+      delete session.startTime;
+      delete session.startTimeOccurrence;
+    });
+  }
+  plan.sessionAttendance = [{ sessionId: "legacy-function", confirmedGuests: null }];
+  plan.tasks.forEach((task) => delete task.relativeOffsetDays);
+  const legacyWorkspace = { format: "mehfiloom-workspace", schemaVersion: 4, activePlanId: plan.id, plans: [plan] };
+  const values = new Map([[LEGACY_WORKSPACE_STORAGE_KEY, JSON.stringify(legacyWorkspace)]]);
+  const loaded = loadWorkspaceFromStorage({ getItem(key) { return values.get(key) ?? null; } });
+
+  assert.equal(loaded.schemaVersion, WORKSPACE_VERSION);
+  assert.equal(loaded.plans[0].planBrief.timeZone, null, "legacy plans do not guess a host timezone");
+  assert.equal(loaded.plans[0].planBrief.eventTime, "");
+  assert.equal(loaded.plans[0].planBrief.sessions[0].startTime, "");
+  assert.equal(loaded.plans[0].planBrief.sessions[0].startTimeOccurrence, null);
+  assert.ok(loaded.plans[0].tasks.every((task) => task.relativeOffsetDays === null));
 });
 
 test("plan JSON export/import round-trips and re-identification preserves internal links", () => {

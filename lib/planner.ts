@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isValidIanaTimeZone, resolveZonedDateTime, type TimeOccurrence } from "./schedule.ts";
 
 export const EVENT_TYPES = ["wedding", "birthday", "community"] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
@@ -112,11 +113,16 @@ export const eventBriefSchema = z
         "Enter a valid event date.",
       )
       .refine(isValidCalendarDate, "Enter a valid event date."),
+    timeZone: z.string().trim().min(1).max(100).nullable().default(null),
+    eventTime: z.string().regex(/^(?:|(?:[01]\d|2[0-3]):[0-5]\d)$/).default(""),
+    eventTimeOccurrence: z.enum(["earlier", "later"]).nullable().default(null),
     guestCount: z.number().int().min(1).max(10000),
     sessions: z.array(z.object({
       id: z.string().min(3).max(100).regex(/^[A-Za-z0-9:_-]+$/),
       name: z.string().trim().min(2).max(80),
       date: z.string().refine(isValidCalendarDate, "Enter a valid session date."),
+      startTime: z.string().regex(/^(?:|(?:[01]\d|2[0-3]):[0-5]\d)$/).default(""),
+      startTimeOccurrence: z.enum(["earlier", "later"]).nullable().default(null),
       guestCount: z.number().int().min(1).max(10000),
     }).strict()).max(12).default([]),
     budgetAmount: z.string().trim().min(1).max(24),
@@ -126,6 +132,45 @@ export const eventBriefSchema = z
   })
   .strict()
   .superRefine((brief, context) => {
+    if (brief.timeZone !== null && !isValidIanaTimeZone(brief.timeZone)) {
+      context.addIssue({ code: "custom", path: ["timeZone"], message: "Enter a valid IANA time zone, such as Asia/Kolkata or America/New_York." });
+    }
+
+    const validateLocalTime = (
+      date: string,
+      time: string,
+      occurrence: TimeOccurrence | null,
+      path: (string | number)[],
+    ) => {
+      if (!time) {
+        if (occurrence !== null) context.addIssue({ code: "custom", path, message: "Choose a repeated-time occurrence only when a local time is set." });
+        return;
+      }
+      if (!date) {
+        context.addIssue({ code: "custom", path, message: "Set the event or function date before adding its local start time." });
+        return;
+      }
+      if (!brief.timeZone || !isValidIanaTimeZone(brief.timeZone)) {
+        context.addIssue({ code: "custom", path, message: "Set a valid event time zone before adding a local start time." });
+        return;
+      }
+      const resolution = resolveZonedDateTime(date, time, brief.timeZone, occurrence);
+      if (resolution.status === "nonexistent") {
+        context.addIssue({ code: "custom", path, message: "This local time does not exist because the clocks move forward in this time zone." });
+      } else if (resolution.status === "ambiguous" && occurrence === null) {
+        context.addIssue({ code: "custom", path, message: "This local time occurs twice when clocks move back. Choose the earlier or later occurrence." });
+      } else if (resolution.status === "invalid") {
+        context.addIssue({ code: "custom", path, message: "Check the date, local time, and IANA time zone." });
+      } else if (resolution.status === "unique" && occurrence !== null) {
+        context.addIssue({ code: "custom", path, message: "Clear the repeated-time choice because this local time occurs only once." });
+      }
+    };
+
+    validateLocalTime(brief.eventDate, brief.eventTime, brief.eventTimeOccurrence, ["eventTime"]);
+    brief.sessions.forEach((session, index) => {
+      validateLocalTime(session.date, session.startTime, session.startTimeOccurrence, ["sessions", index, "startTime"]);
+    });
+
     const ids = brief.sessions.map((session) => session.id);
     if (new Set(ids).size !== ids.length) {
       context.addIssue({ code: "custom", path: ["sessions"], message: "Session IDs must be unique." });
@@ -269,6 +314,9 @@ export const EXAMPLE_BRIEF: EventBrief = {
   eventName: "A spring wedding",
   location: "Jaipur, India",
   eventDate: "2027-02-14",
+  timeZone: null,
+  eventTime: "",
+  eventTimeOccurrence: null,
   guestCount: 120,
   sessions: [],
   budgetAmount: "250000",

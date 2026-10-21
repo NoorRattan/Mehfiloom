@@ -42,6 +42,9 @@ export function diffPlanRevision(baseInput: SavedPlan, candidateInput: SavedPlan
     eventName: "Event name",
     location: "Location",
     eventDate: "Event date",
+    timeZone: "Event time zone",
+    eventTime: "Local event time",
+    eventTimeOccurrence: "Repeated-time choice",
     guestCount: "Guest count",
     sessions: "Sessions / functions",
     budgetAmount: "Budget cap",
@@ -53,7 +56,7 @@ export function diffPlanRevision(baseInput: SavedPlan, candidateInput: SavedPlan
     .filter((field) => !same(base.planBrief[field], candidate.planBrief[field]));
   if (changedBriefFields.length > 0) {
     const detail = changedBriefFields.map((field) => {
-      if (field === "eventName" || field === "location" || field === "eventDate" || field === "budgetAmount" || field === "style" || field === "mustHaves") {
+      if (field === "eventName" || field === "location" || field === "eventDate" || field === "timeZone" || field === "eventTime" || field === "budgetAmount" || field === "style" || field === "mustHaves") {
         return `${briefLabels[field]}: ${concise(base.planBrief[field] || "Not set")} → ${concise(candidate.planBrief[field] || "Not set")}`;
       }
       return briefLabels[field];
@@ -71,6 +74,7 @@ export function diffPlanRevision(baseInput: SavedPlan, candidateInput: SavedPlan
       const differences = [
         previous.name !== session.name ? `renamed to ${concise(session.name)}` : "",
         previous.date !== session.date ? `date ${concise(previous.date || "Not set")} → ${concise(session.date || "Not set")}` : "",
+        previous.startTime !== session.startTime ? `start time ${concise(previous.startTime || "Not set")} → ${concise(session.startTime || "Not set")}` : "",
         previous.guestCount !== session.guestCount ? `${previous.guestCount} → ${session.guestCount} expected` : "",
       ].filter(Boolean);
       return differences.length ? [`${concise(session.name)}: ${differences.join(", ")}`] : [];
@@ -168,7 +172,7 @@ function normalizeTaskTitle(title: string): string {
 }
 
 function hasProgress(task: TaskRecord): boolean {
-  return task.status !== "todo" || task.ownerLabel !== "Host" || task.dueDate !== null || task.dependencyIds.length > 0;
+  return task.status !== "todo" || task.ownerLabel !== "Host" || task.dueDate !== null || task.relativeOffsetDays !== null || task.dependencyIds.length > 0;
 }
 
 function hasVendorWork(vendor: VendorRecord, referencedByCost: boolean): boolean {
@@ -247,6 +251,7 @@ export function acceptPlanRevision(
         status: previous.status,
         ownerLabel: previous.ownerLabel,
         dueDate: previous.dueDate,
+        relativeOffsetDays: previous.relativeOffsetDays,
         dependencyIds: previous.dependencyIds,
       });
       return;

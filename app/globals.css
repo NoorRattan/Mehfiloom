@@ -223,6 +223,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
 .timeline-item.task-done .timeline-copy > strong { color: #99958b; text-decoration: line-through; }
 .priority { flex: 0 0 auto; padding: 4px 7px; border-radius: 999px; font-size: 7px; font-weight: 700; text-transform: capitalize; }
 .priority-high { color: #a35e60; background: #f8eae7; }.priority-medium { color: #9a7844; background: #f8f0dd; }.priority-low { color: #687d61; background: #edf1e8; }
+.field > label { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.field > label > span { display: flex; align-items: baseline; gap: 6px; }
+.field select, .session-date-time select, .time-occurrence-choice select { width: 100%; min-width: 0; border: 1px solid #e8e4db; border-radius: 8px; background: #fffefa; color: #3d3a33; padding: 9px 10px; font: inherit; }
+.session-date-time { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.session-date-time label { min-width: 0; display: flex; flex-direction: column; gap: 5px; color: #898276; font-size: 8px; }
+.session-date-time input { min-width: 0; width: 100%; }
+.time-occurrence-choice { display: flex; flex-direction: column; gap: 4px; color: #675533; font-size: 9px; font-weight: 600; }
+.task-meta-edit label small, .task-date-note { color: #777267; font-size: 8px; font-weight: 400; line-height: 1.45; }
 
 .lower-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 21px; }
 .compact-heading { margin-bottom: 10px; align-items: center; }

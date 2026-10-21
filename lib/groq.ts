@@ -130,6 +130,7 @@ Return:
 - A concise concept title, overview, and theme that fit the event type, place, timing, style, guest count, and must-haves.
 - 4 to 8 distinct budget categories with integer relative weights from 1 to 1000 and a short rationale. Include a contingency/reserve category. Weights are not prices or percentages; do not output monetary amounts.
 - 6 to 12 useful tasks with timing relative to the event when a date is known, otherwise relative to planning milestones. Keep the timeline practical and do not invent exact deadlines.
+- Treat the event and function dates as local calendar dates. Any supplied local times belong to the supplied IANA time zone; never reinterpret them using UTC or the computer's time zone, and do not silently change a supplied date or time.
 - If named sessions are present in the brief, set a task's sessionId only when that task clearly belongs to one of the supplied sessions; otherwise set sessionId to null. Copy session IDs exactly and never invent one. Treat the overall guest count as a unique-people estimate; session counts can overlap and must not be added together.
 - 3 to 6 vendor categories and 3 to 6 due-diligence questions each. These are checklists, not vendor recommendations.
 - 3 to 5 personalized ideas; explain why each fits and whether its cost or availability is unresolved.

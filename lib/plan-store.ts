@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { addCalendarDays } from "./schedule.ts";
 import {
   BUDGET_CATEGORIES,
   buildPlanResult,
@@ -9,11 +10,12 @@ import {
   type PlannerProposal,
 } from "./planner.ts";
 
-export const WORKSPACE_STORAGE_KEY = "mehfiloom.workspace.v4";
-export const LEGACY_WORKSPACE_STORAGE_KEY = "mehfiloom.workspace.v3";
-export const OLDER_WORKSPACE_STORAGE_KEY = "mehfiloom.workspace.v2";
+export const WORKSPACE_STORAGE_KEY = "mehfiloom.workspace.v5";
+export const LEGACY_WORKSPACE_STORAGE_KEY = "mehfiloom.workspace.v4";
+export const OLDER_WORKSPACE_STORAGE_KEY = "mehfiloom.workspace.v3";
+export const SECOND_OLDER_WORKSPACE_STORAGE_KEY = "mehfiloom.workspace.v2";
 export const OLDEST_WORKSPACE_STORAGE_KEY = "mehfiloom.workspace.v1";
-export const WORKSPACE_VERSION = 4;
+export const WORKSPACE_VERSION = 5;
 export const MAX_SAVED_PLANS = 12;
 export const MAX_PLAN_DOCUMENT_BYTES = 500_000;
 export const MAX_WORKSPACE_BYTES = 2_000_000;
@@ -35,6 +37,7 @@ export const taskRecordSchema = z.object({
   status: z.enum(["todo", "in_progress", "done", "blocked"]),
   ownerLabel: z.string().trim().max(80),
   dueDate: dateOnlySchema.nullable(),
+  relativeOffsetDays: z.number().int().min(-3650).max(3650).nullable().default(null),
   dependencyIds: z.array(idSchema).max(20),
   sessionId: idSchema.nullable().default(null),
 }).strict();
@@ -417,6 +420,31 @@ export type VendorRecord = z.infer<typeof vendorRecordSchema>;
 export type TaskRecord = z.infer<typeof taskRecordSchema>;
 export type SavedPlan = z.infer<typeof savedPlanSchema>;
 
+export type TaskDateResolution = {
+  anchorDate: string | null;
+  relativeDate: string | null;
+  fixedDate: string | null;
+  dueDate: string | null;
+};
+
+export function resolveTaskDate(
+  task: Pick<TaskRecord, "dueDate" | "relativeOffsetDays" | "sessionId">,
+  eventDate: string,
+  sessions: readonly Pick<EventBrief["sessions"][number], "id" | "date">[] = [],
+): TaskDateResolution {
+  const session = task.sessionId ? sessions.find((item) => item.id === task.sessionId) : null;
+  const anchorDate = task.sessionId ? session?.date || null : eventDate || null;
+  const relativeDate = task.relativeOffsetDays === null || !anchorDate
+    ? null
+    : addCalendarDays(anchorDate, task.relativeOffsetDays);
+  return {
+    anchorDate,
+    relativeDate,
+    fixedDate: task.dueDate,
+    dueDate: task.dueDate ?? relativeDate,
+  };
+}
+
 export function canAddTaskDependency(
   tasks: readonly Pick<TaskRecord, "id" | "dependencyIds">[],
   taskId: string,
@@ -456,15 +484,32 @@ export function canReopenTask(
   );
 }
 
-export function taskScheduleConflicts(tasks: readonly TaskRecord[], eventDate = "", today = ""): Map<string, string[]> {
+export function taskScheduleConflicts(
+  tasks: readonly TaskRecord[],
+  eventDate = "",
+  today = "",
+  sessions: readonly Pick<EventBrief["sessions"][number], "id" | "date">[] = [],
+): Map<string, string[]> {
   const taskById = new Map(tasks.map((task) => [task.id, task]));
   const conflicts = new Map<string, string[]>();
 
   for (const task of tasks) {
     const messages: string[] = [];
-    const dueDate = task.dueDate;
-    if (dueDate && eventDate && dueDate > eventDate) {
-      messages.push(`This task is due ${dueDate}, after the event date ${eventDate}.`);
+    const dates = resolveTaskDate(task, eventDate, sessions);
+    const dueDate = dates.dueDate;
+    if (task.relativeOffsetDays !== null && !dates.relativeDate) {
+      messages.push(task.sessionId
+        ? "Set this function's date to resolve its relative task date."
+        : "Set the event date to resolve this relative task date.");
+    }
+    if (dates.relativeDate && task.dueDate && dates.relativeDate !== task.dueDate) {
+      messages.push(`The relative target is ${dates.relativeDate}, but the fixed due date remains ${task.dueDate}; review the commitment before moving it.`);
+    }
+    const anchorLabel = task.sessionId ? "function date" : "event date";
+    if (dates.anchorDate && dates.fixedDate && dates.fixedDate > dates.anchorDate) {
+      messages.push(`This task is due ${dates.fixedDate}, after the ${anchorLabel} ${dates.anchorDate}.`);
+    } else if (dates.anchorDate && !dates.fixedDate && dates.relativeDate && dates.relativeDate > dates.anchorDate) {
+      messages.push(`This relative task target is ${dates.relativeDate}, after the ${anchorLabel} ${dates.anchorDate}.`);
     }
     if (dueDate && today && dueDate < today && task.status !== "done") {
       messages.push(`This task was due ${dueDate} and is still open.`);
@@ -472,8 +517,9 @@ export function taskScheduleConflicts(tasks: readonly TaskRecord[], eventDate = 
     if (dueDate) {
       const laterPrerequisites = task.dependencyIds
         .map((dependencyId) => taskById.get(dependencyId))
-        .filter((dependency): dependency is TaskRecord => dependency !== undefined && dependency.dueDate !== null && dependency.dueDate > dueDate);
-      messages.push(...laterPrerequisites.map((dependency) => `${dependency.title} is due ${dependency.dueDate}, after this task.`));
+        .map((dependency) => dependency ? { task: dependency, dueDate: resolveTaskDate(dependency, eventDate, sessions).dueDate } : null)
+        .filter((dependency): dependency is { task: TaskRecord; dueDate: string } => dependency !== null && dependency.dueDate !== null && dependency.dueDate > dueDate);
+      messages.push(...laterPrerequisites.map(({ task: dependency, dueDate: dependencyDate }) => `${dependency.title} is due ${dependencyDate}, after this task.`));
     }
     if (messages.length > 0) conflicts.set(task.id, messages);
   }
@@ -668,6 +714,7 @@ export function createSavedPlan(
     status: "todo",
     ownerLabel: "Host",
     dueDate: null,
+    relativeOffsetDays: null,
     dependencyIds: [],
     sessionId: task.sessionId ?? null,
   }));

@@ -15,6 +15,7 @@ import {
   proposalJsonSchema,
   proposalSchema,
 } from "../lib/planner.ts";
+import { addCalendarDays, dateInTimeZone, isValidIanaTimeZone, resolveZonedDateTime } from "../lib/schedule.ts";
 
 test("budget input converts exactly using the selected currency precision", () => {
   assert.equal(parseBudgetMinor("250000.75", "INR"), 25_000_075);
@@ -70,6 +71,40 @@ test("brief validation accepts an unset date and rejects impossible calendar dat
   assert.equal(eventBriefSchema.safeParse({ ...EXAMPLE_BRIEF, eventDate: "2028-02-29" }).success, true);
 });
 
+test("event briefs resolve local times only in a supplied IANA time zone", () => {
+  const noTimezone = { ...EXAMPLE_BRIEF, timeZone: null, eventTime: "", eventTimeOccurrence: null };
+  const parsed = eventBriefSchema.parse({ ...noTimezone, sessions: [{ id: "main-session", name: "Main gathering", date: "2027-02-14", guestCount: 120 }] });
+  assert.equal(parsed.timeZone, null);
+  assert.equal(parsed.eventTime, "");
+  assert.equal(parsed.eventTimeOccurrence, null);
+  assert.equal(parsed.sessions[0].startTime, "");
+  assert.equal(parsed.sessions[0].startTimeOccurrence, null);
+  assert.equal(eventBriefSchema.safeParse({ ...noTimezone, eventTime: "10:30" }).success, false, "local times need an explicit zone and date");
+  assert.equal(eventBriefSchema.safeParse({ ...EXAMPLE_BRIEF, timeZone: "not/a-zone" }).success, false);
+  assert.equal(eventBriefSchema.safeParse({ ...EXAMPLE_BRIEF, timeZone: "America/New_York", eventDate: "2027-03-14", eventTime: "02:30" }).success, false, "spring-forward gaps are rejected");
+  assert.equal(eventBriefSchema.safeParse({ ...EXAMPLE_BRIEF, timeZone: "America/New_York", eventDate: "2027-11-07", eventTime: "01:30" }).success, false, "fall-back overlaps require an explicit occurrence");
+  assert.equal(eventBriefSchema.safeParse({ ...EXAMPLE_BRIEF, timeZone: "America/New_York", eventDate: "2027-11-07", eventTime: "01:30", eventTimeOccurrence: "later" }).success, true);
+});
+
+test("timezone resolution handles date boundaries, DST gaps, and repeated times", () => {
+  assert.equal(isValidIanaTimeZone("Asia/Kolkata"), true);
+  assert.equal(isValidIanaTimeZone("not/a-zone"), false);
+  assert.equal(dateInTimeZone(new Date("2027-03-14T00:30:00.000Z"), "America/Los_Angeles"), "2027-03-13");
+
+  const gap = resolveZonedDateTime("2027-03-14", "02:30", "America/New_York");
+  assert.equal(gap.status, "nonexistent");
+  assert.deepEqual(gap.candidates, []);
+
+  const overlap = resolveZonedDateTime("2027-11-07", "01:30", "America/New_York");
+  assert.equal(overlap.status, "ambiguous");
+  assert.deepEqual(overlap.candidates, ["2027-11-07T05:30:00.000Z", "2027-11-07T06:30:00.000Z"]);
+  assert.equal(resolveZonedDateTime("2027-11-07", "01:30", "America/New_York", "earlier").instant, overlap.candidates[0]);
+  assert.equal(resolveZonedDateTime("2027-11-07", "01:30", "America/New_York", "later").instant, overlap.candidates[1]);
+
+  assert.equal(addCalendarDays("2027-03-13", 1), "2027-03-14");
+  assert.equal(addCalendarDays("2027-11-06", 1), "2027-11-07");
+});
+
 test("event briefs keep named session counts separate and reject duplicate session IDs", () => {
   const sessions = [
     { id: "welcome-session", name: "Welcome gathering", date: "2027-02-13", guestCount: 70 },
@@ -80,7 +115,7 @@ test("event briefs keep named session counts separate and reject duplicate sessi
   delete legacy.sessions;
 
   assert.equal(parsed.guestCount, 110, "overall guest count remains its own unique-people estimate");
-  assert.deepEqual(parsed.sessions, sessions);
+  assert.deepEqual(parsed.sessions, sessions.map((session) => ({ ...session, startTime: "", startTimeOccurrence: null })));
   assert.deepEqual(eventBriefSchema.parse(legacy).sessions, [], "older briefs default to no session breakdown");
   assert.equal(eventBriefSchema.safeParse({ ...EXAMPLE_BRIEF, sessions: [sessions[0], { ...sessions[1], id: sessions[0].id }] }).success, false);
   assert.equal(eventBriefSchema.safeParse({ ...EXAMPLE_BRIEF, sessions: [{ ...sessions[0], date: "2027-02-30" }] }).success, false);
