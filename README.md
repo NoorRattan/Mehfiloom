@@ -29,6 +29,10 @@ On PowerShell, copy the file with `Copy-Item .env.example .env.local`. Keep the 
 
 Live generation sends the event brief to Groq. Revisions also send the current request and earlier accepted revision requests so stated preferences and activity exclusions can carry forward; older request context is trimmed if needed to remain within the API body limit. Groq says inference data is not retained by default, but may be temporarily logged for up to 30 days for reliability or abuse monitoring. Use fictional demo details and avoid real guest names or sensitive personal information. Check Groq's [data policy](https://console.groq.com/docs/your-data), [model limits](https://console.groq.com/docs/rate-limits), and [billing information](https://console.groq.com/docs/billing-faqs) before use.
 
+## Deploy to Vercel
+
+Import this Git repository into Vercel. The project uses the standard Next.js runtime; Vercel detects Next.js and uses its default build settings. Add `GROQ_API_KEY` as a private project environment variable to enable live generation. Without it, the example plans and rest of the app remain available, while live generation reports that the provider is not configured.
+
 ## What the app currently does
 
 - Captures event type, name, place, optional event date, IANA time zone and local start time, function dates and local start times, attendance, currency, budget cap, style, and must-haves.
