@@ -54,6 +54,21 @@ test("invalid JSON, absent body, and invalid briefs fail before a provider call"
   assert.equal(providerCalls(), 0);
 });
 
+test("non-JSON request bodies are rejected before rate limiting or provider calls", async () => {
+  let slotChecks = 0;
+  const { handle, providerCalls } = makeEndpoint({
+    allowRequest: () => { slotChecks += 1; return true; },
+  });
+  const response = await handle(request(JSON.stringify(EXAMPLE_BRIEF), { "Content-Type": "text/plain" }));
+  const payload = await response.json();
+
+  assert.equal(response.status, 415);
+  assert.equal(payload.error.message, "Send the event brief as JSON.");
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(slotChecks, 0);
+  assert.equal(providerCalls(), 0);
+});
+
 test("declared and streamed oversize request bodies are rejected", async () => {
   const { handle, providerCalls } = makeEndpoint();
   const declared = await handle(request("{}", { "Content-Length": String(16 * 1024 + 1) }));
@@ -63,7 +78,12 @@ test("declared and streamed oversize request bodies are rejected", async () => {
       controller.close();
     },
   });
-  const streamedRequest = new Request(endpointUrl, { method: "POST", body: stream, duplex: "half" });
+  const streamedRequest = new Request(endpointUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: stream,
+    duplex: "half",
+  });
   const streamed = await handle(streamedRequest);
 
   assert.equal(declared.status, 413);

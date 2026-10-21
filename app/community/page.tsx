@@ -31,7 +31,7 @@ export default function CommunityPage() {
           <figure className="community-hero-art">
             <div className="community-hero-photo" role="img" aria-label="Friends sharing a picnic and toasting outdoors" />
             <figcaption>GOOD THINGS HAPPEN TOGETHER <a href="https://unsplash.com/photos/friends-enjoying-a-picnic-and-toasting-drinks-outdoors-6lkDaLeroEA" target="_blank" rel="noreferrer">Photo: Vitaly Gariev / Unsplash</a></figcaption>
-            <div className="community-route-map" aria-label="A simple event flow: place, people, purpose, plan"><span>PLACE</span><i /><span>PEOPLE</span><i /><span>PURPOSE</span><i /><b>PLAN</b></div>
+            <div className="community-route-map" role="img" aria-label="A simple event flow: place, people, purpose, plan"><span>PLACE</span><i /><span>PEOPLE</span><i /><span>PURPOSE</span><i /><b>PLAN</b></div>
           </figure>
           <span className="community-ring" aria-hidden="true">✳</span>
         </section>

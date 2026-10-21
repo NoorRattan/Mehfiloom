@@ -41,8 +41,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-# Local build and platform caches
+# Ignore stale local build outputs from earlier deployment experiments.
 .vinext/
 .cloudflare/
 .wrangler/
+# Local development variables and secrets
 .dev.vars*

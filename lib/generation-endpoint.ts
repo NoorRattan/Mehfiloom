@@ -95,6 +95,10 @@ export function createGenerationEndpoint(options: {
 }) {
   return async function handleGenerationRequest(request: Request): Promise<Response> {
     try {
+      const contentType = request.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
+      if (request.body && contentType !== "application/json") {
+        throw new RequestProblem("Send the event brief as JSON.", 415);
+      }
       const input = await readJsonBody(request);
       const parsed = generationRequestSchema.safeParse(input);
       if (!parsed.success) {

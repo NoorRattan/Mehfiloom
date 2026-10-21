@@ -1029,32 +1029,32 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .app-shell .cost-adjustments { display: grid; gap: 9px; margin-top: 10px; padding: 10px; border: 1px solid #e5e3d8; border-radius: 9px; background: #f9f9f2; }
 .app-shell .adjustment-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .app-shell .adjustment-heading > div { display: grid; gap: 3px; }
-.app-shell .adjustment-heading strong { color: #405143; font-size: 10px; }
-.app-shell .adjustment-heading small,.app-shell .adjustment-empty,.app-shell .adjustment-review-state,.app-shell .adjustment-formula { margin: 0; color: #70786c; font-size: 9px; line-height: 1.5; }
+.app-shell .adjustment-heading strong { color: #405143; font-size: 12px; }
+.app-shell .adjustment-heading small,.app-shell .adjustment-empty,.app-shell .adjustment-review-state,.app-shell .adjustment-formula { margin: 0; color: #70786c; font-size: 11px; line-height: 1.5; }
 .app-shell .adjustment-status-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
-.app-shell .adjustment-status-grid label { min-width: 0; display: grid; gap: 4px; color: #52614f; font-size: 9px; font-weight: 700; }
-.app-shell .adjustment-status-grid select { min-width: 0; min-height: 32px; padding: 5px 7px; border: 1px solid #d8dccf; border-radius: 6px; color: #405143; background: #fffefa; font-size: 9px; }
-.app-shell .adjustment-status-grid label > span { min-height: 32px; display: flex; align-items: center; color: #596554; font-size: 9px; font-weight: 500; }
+.app-shell .adjustment-status-grid label { min-width: 0; display: grid; gap: 4px; color: #52614f; font-size: 11px; font-weight: 700; }
+.app-shell .adjustment-status-grid select { min-width: 0; min-height: 36px; padding: 6px 8px; border: 1px solid #d8dccf; border-radius: 6px; color: #405143; background: #fffefa; font-size: 12px; }
+.app-shell .adjustment-status-grid label > span { min-height: 36px; display: flex; align-items: center; color: #596554; font-size: 11px; font-weight: 500; }
 .app-shell .adjustment-rollup { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 5px 10px; padding: 8px; border-radius: 6px; background: #fffefa; }
-.app-shell .adjustment-rollup span { display: flex; justify-content: space-between; gap: 8px; color: #687162; font-size: 9px; }
-.app-shell .adjustment-rollup strong { color: #465543; font-size: 9px; text-align: right; }
+.app-shell .adjustment-rollup span { display: flex; justify-content: space-between; gap: 8px; color: #687162; font-size: 11px; }
+.app-shell .adjustment-rollup strong { color: #465543; font-size: 11px; text-align: right; }
 .app-shell .adjustment-rollup .adjustment-final { grid-column: 1/-1; padding-top: 6px; border-top: 1px solid #e8e9df; color: #374d3b; font-weight: 750; }
 .app-shell .adjustment-list { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
 .app-shell .adjustment-read-row,.app-shell .adjustment-edit-row { min-width: 0; padding: 8px; border: 1px solid #e6e8df; border-radius: 6px; background: #fffefa; }
 .app-shell .adjustment-read-row > span { display: grid; gap: 3px; }
-.app-shell .adjustment-read-row strong { color: #465543; font-size: 9px; }
-.app-shell .adjustment-read-row small { overflow-wrap: anywhere; color: #70786c; font-size: 8px; line-height: 1.5; }
+.app-shell .adjustment-read-row strong { color: #465543; font-size: 11px; }
+.app-shell .adjustment-read-row small { overflow-wrap: anywhere; color: #70786c; font-size: 10px; line-height: 1.5; }
 .app-shell .adjustment-add-form { display: grid; gap: 8px; padding-top: 9px; border-top: 1px solid #e3e6dc; }
-.app-shell .adjustment-add-form h4 { margin: 0; color: #465543; font-size: 9px; }
+.app-shell .adjustment-add-form h4 { margin: 0; color: #465543; font-size: 12px; }
 .app-shell .adjustment-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; }
-.app-shell .adjustment-fields label { min-width: 0; display: grid; gap: 4px; color: #53614e; font-size: 8px; font-weight: 700; }
-.app-shell .adjustment-fields input,.app-shell .adjustment-fields select { width: 100%; min-width: 0; min-height: 32px; padding: 5px 7px; border: 1px solid #d8dccf; border-radius: 6px; color: #405143; background: #fffefa; font-size: 9px; }
+.app-shell .adjustment-fields label { min-width: 0; display: grid; gap: 4px; color: #53614e; font-size: 11px; font-weight: 700; }
+.app-shell .adjustment-fields input,.app-shell .adjustment-fields select { width: 100%; min-width: 0; min-height: 36px; padding: 6px 8px; border: 1px solid #d8dccf; border-radius: 6px; color: #405143; background: #fffefa; font-size: 12px; }
 .app-shell .adjustment-fields .adjustment-source { grid-column: 1/-1; }
 .app-shell .adjustment-row-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 7px; }
-.app-shell .adjustment-row-actions button,.app-shell .adjustment-add-form > button { min-height: 31px; padding: 5px 9px; border: 1px solid #aebca4; border-radius: 6px; color: #35533b; background: #eff4e7; font-size: 8px; font-weight: 700; cursor: pointer; }
+.app-shell .adjustment-row-actions button,.app-shell .adjustment-add-form > button { min-height: 36px; padding: 6px 10px; border: 1px solid #aebca4; border-radius: 6px; color: #35533b; background: #eff4e7; font-size: 11px; font-weight: 700; cursor: pointer; }
 .app-shell .adjustment-row-actions .adjustment-remove { border-color: #e2c8ba; color: #8a4b37; background: #fff8f4; }
 .app-shell .adjustment-review { margin-top: 0; }
-@media(max-width:560px){.app-shell .adjustment-rollup{grid-template-columns:1fr}.app-shell .adjustment-rollup .adjustment-final{grid-column:1}}
+@media(max-width:560px){.app-shell .adjustment-fields{grid-template-columns:1fr}.app-shell .adjustment-rollup{grid-template-columns:1fr}.app-shell .adjustment-rollup .adjustment-final{grid-column:1}}
 
 .print-plan-document { display: none; }
 

@@ -58,7 +58,7 @@ export default function Home() {
             <div className="hero-photo" role="img" aria-label="Friends sharing a picnic and toasting outdoors" />
             <div className="hero-photo-tint" />
             <div className="scene-note scene-note-top"><span>FOR THE PEOPLE</span><i aria-hidden="true">✳</i></div>
-            <div className="plan-snapshot" aria-label="Illustrative preview of a Mehfiloom plan">
+            <div className="plan-snapshot" role="group" aria-label="Illustrative preview of a Mehfiloom plan">
               <div className="snapshot-head"><span className="snapshot-icon"><Sparkles size={15} aria-hidden="true" /></span><div><small>YOUR FIRST DRAFT</small><strong>A plan taking shape</strong></div><span className="snapshot-status">EDITABLE</span></div>
               <div className="snapshot-preview">
                 <div className="snapshot-label"><span>Budget by priority</span><span>Planning targets</span></div>
