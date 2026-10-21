@@ -464,6 +464,10 @@ test("import rejects malformed, oversized, unsupported, and broken-reference doc
   assert.throws(() => parsePlanDocument(" ".repeat(500_001)), /too large/i);
   assert.throws(() => parsePlanDocument(JSON.stringify({ ...document, schemaVersion: 99 })), /schemaVersion/i);
 
+  const wrongCurrency = structuredClone(document);
+  wrongCurrency.plan.budget.currency = "USD";
+  assert.throws(() => parsePlanDocument(JSON.stringify(wrongCurrency)));
+
   const brokenReference = structuredClone(document);
   brokenReference.plan.budget.items[0].vendorId = "missing-vendor";
   assert.throws(() => parsePlanDocument(JSON.stringify(brokenReference)), /reference a vendor/i);

@@ -1046,3 +1046,53 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .app-shell .adjustment-row-actions .adjustment-remove { border-color: #e2c8ba; color: #8a4b37; background: #fff8f4; }
 .app-shell .adjustment-review { margin-top: 0; }
 @media(max-width:560px){.app-shell .adjustment-rollup{grid-template-columns:1fr}.app-shell .adjustment-rollup .adjustment-final{grid-column:1}}
+
+.print-plan-document { display: none; }
+
+@page { margin: 14mm; }
+
+@media print {
+  html, body { min-height: 0 !important; color: #20231f !important; background: #fff !important; font-size: 10pt; print-color-adjust: exact; }
+  .topbar, .hero, .workspace-toolbar, .workspace-grid, .page-footer { display: none !important; }
+  .app-shell, .main-wrap { min-height: 0; width: auto; max-width: none; margin: 0; padding: 0; background: #fff; }
+  .print-plan-document { display: block; color: #20231f; font-size: 9pt; line-height: 1.45; }
+  .print-document-heading { padding-bottom: 12pt; border-bottom: 2px solid #344437; }
+  .print-document-heading > span { color: #526a55; font-size: 8pt; font-weight: 700; letter-spacing: .12em; }
+  .print-document-heading h1 { margin: 6pt 0 2pt; color: #27372a; font-family: Georgia, "Times New Roman", serif; font-size: 25pt; line-height: 1.1; }
+  .print-document-heading > p { margin: 0; color: #565e54; }
+  .print-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8pt; margin: 12pt 0 0; }
+  .print-summary-grid > div { min-width: 0; padding: 7pt; border: 1px solid #d9ded5; border-radius: 5pt; }
+  .print-summary-grid dt, .print-detail-grid dt { color: #5c665b; font-size: 7.5pt; font-weight: 700; }
+  .print-summary-grid dd, .print-detail-grid dd { margin: 2pt 0 0; overflow-wrap: anywhere; color: #222820; }
+  .print-budget-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .print-caution { margin: 10pt 0 0; padding: 7pt 9pt; border: 1px solid #bd8356; color: #6a4528; background: #fff8ef; }
+  .print-section { margin-top: 15pt; break-inside: avoid-page; page-break-inside: avoid; }
+  .print-section h2 { margin: 0 0 6pt; padding-bottom: 3pt; border-bottom: 1px solid #d8ddd4; color: #2e4532; font-family: Georgia, "Times New Roman", serif; font-size: 15pt; font-weight: 600; }
+  .print-section h3 { margin: 8pt 0 3pt; color: #38463a; font-size: 10pt; }
+  .print-section p { margin: 3pt 0 6pt; }
+  .print-section ul { margin: 4pt 0 0; padding-left: 16pt; }
+  .print-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8pt; margin: 7pt 0; }
+  .print-detail-grid > div { padding: 7pt; border: 1px solid #e0e3dc; border-radius: 4pt; }
+  .print-note { color: #61675f; font-size: 8pt; }
+  .print-table { width: 100%; border-collapse: collapse; margin-top: 6pt; font-size: 8pt; }
+  .print-table thead { display: table-header-group; }
+  .print-table tr { break-inside: avoid; page-break-inside: avoid; }
+  .print-table th, .print-table td { padding: 5pt 6pt; border-bottom: 1px solid #dfe3dc; text-align: left; vertical-align: top; }
+  .print-table thead th { color: #344437; background: #f0f3ed; font-weight: 700; }
+  .print-table tbody th { width: 25%; font-weight: 700; }
+  .print-table small { display: block; margin-top: 3pt; color: #6a5144; font-weight: 400; }
+  .print-warning { color: #8b3d34 !important; }
+  .print-cost-list, .print-idea-list { display: grid; gap: 7pt; margin: 0 !important; padding: 0 !important; list-style: none; }
+  .print-cost-list > li, .print-idea-list > li, .print-vendor { padding: 7pt 8pt; border: 1px solid #dfe3dc; border-radius: 4pt; break-inside: avoid; page-break-inside: avoid; }
+  .print-cost-heading { display: flex; justify-content: space-between; gap: 10pt; }
+  .print-cost-heading > span { color: #646b62; font-size: 7.5pt; text-align: right; }
+  .print-cost-list p, .print-idea-list p, .print-vendor p { margin: 3pt 0; }
+  .print-cost-list ul { margin-top: 3pt; color: #535c51; font-size: 8pt; }
+  .print-idea-list small { color: #626960; }
+  .print-vendor { margin-top: 6pt; }
+  .print-vendor h3 { margin-top: 0; }
+  .print-vendor ul { margin-bottom: 0; }
+  .print-question-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10pt; }
+  .print-question-columns > div { min-width: 0; }
+  .print-document-footer { margin-top: 17pt; padding-top: 6pt; border-top: 1px solid #d8ddd4; color: #5c665b; font-size: 7.5pt; }
+}

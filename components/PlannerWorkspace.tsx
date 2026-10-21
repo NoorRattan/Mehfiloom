@@ -12,6 +12,7 @@ import {
   Flower2,
   MapPin,
   Plus,
+  Printer,
   Sparkles,
   Store,
   Trash2,
@@ -930,6 +931,7 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
             <button type="button" onClick={newPlan}><Plus size={15} /> New plan</button>
             <button type="button" onClick={exportPlan}><ArrowDownToLine size={15} /> Export JSON</button>
             <button type="button" onClick={() => importInput.current?.click()}><Upload size={15} /> Import JSON</button>
+            <button type="button" onClick={() => window.print()}><Printer size={15} /> Print plan</button>
             <input ref={importInput} className="visually-hidden" type="file" accept="application/json,.json" onChange={importPlan} aria-label="Choose a Mehfiloom plan JSON file" />
             <button className="delete-plan-button" type="button" onClick={deletePlan}><Trash2 size={15} /> Delete</button>
           </div>
@@ -1119,6 +1121,119 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
             <div className="plan-footer"><span><CircleAlert size={15} /> You stay in charge of costs, bookings, and final decisions.</span><span>Made for thoughtful hosts.</span></div>
           </section>
         </div>
+        <article className="print-plan-document" aria-label="Printable event plan">
+          <header className="print-document-heading">
+            <span>MEHFILOOM · PRIVATE PLANNING COPY</span>
+            <h1>{submittedBrief.eventName || "Untitled celebration"}</h1>
+            <p>{EVENT_LABELS[submittedBrief.eventType]} · {submittedBrief.location || "Location to confirm"} · {submittedBrief.eventDate || "Date to confirm"}</p>
+            <dl className="print-summary-grid">
+              <div><dt>Expected guests</dt><dd>{submittedBrief.guestCount}</dd></div>
+              <div><dt>Budget cap</dt><dd>{formatMoney(activePlan.budget.capMinor, currency)}</dd></div>
+              <div><dt>Budget review</dt><dd>{activePlan.budget.reviewComplete ? "Marked complete" : "Still open"}</dd></div>
+              <div><dt>Plan version</dt><dd>{activePlan.revisionNumber}</dd></div>
+            </dl>
+          </header>
+
+          {storageStatus !== "Saved on this device" && <p className="print-caution">Local save status: {storageStatus}. This copy reflects the active plan shown in this browser tab.</p>}
+
+          <section className="print-section">
+            <h2>Event brief</h2>
+            <dl className="print-detail-grid">
+              <div><dt>Planning style</dt><dd>{submittedBrief.style || "Not specified"}</dd></div>
+              <div><dt>Must-haves and access needs</dt><dd>{submittedBrief.mustHaves || "None recorded"}</dd></div>
+            </dl>
+            {submittedBrief.sessions.length > 0 && <div>
+              <h3>Functions and sessions</h3>
+              <ul>{submittedBrief.sessions.map((session) => {
+                const attendance = activePlan.sessionAttendance.find((item) => item.sessionId === session.id);
+                return <li key={session.id}>{session.name || "Unnamed session"} · {session.date || "Date to confirm"} · {session.guestCount} expected guests · {attendance?.confirmedGuests ?? "not confirmed"} confirmed</li>;
+              })}</ul>
+            </div>}
+          </section>
+
+          <section className="print-section">
+            <h2>Starting idea</h2>
+            <h3>{proposal.conceptTitle}</h3>
+            <p>{proposal.overview}</p>
+            <p><strong>The feel:</strong> {proposal.theme}</p>
+          </section>
+
+          <section className="print-section">
+            <h2>Budget plan</h2>
+            <p className="print-note">Planning targets only; these allocations are not vendor quotes.</p>
+            <table className="print-table">
+              <thead><tr><th scope="col">Category</th><th scope="col">Allocation</th><th scope="col">Planning note</th></tr></thead>
+              <tbody>{plan.lines.map((line, index) => {
+                const category = BUDGET_CATEGORIES.find((item) => item === line.category);
+                return <tr key={`${line.category}-${index}`}><th scope="row">{category ? CATEGORY_LABELS[category] : line.category}</th><td>{formatMoney(line.amountMinor, currency)}</td><td>{line.rationale}</td></tr>;
+              })}</tbody>
+            </table>
+            <dl className="print-summary-grid print-budget-summary">
+              <div><dt>Known costs</dt><dd>{moneyRange(budgetHealth?.knownCostsMinor ?? 0, budgetHealth?.knownCostsMaxMinor ?? 0, currency)}</dd></div>
+              <div><dt>Reserve</dt><dd>{formatMoney(budgetHealth?.reserveMinor ?? 0, currency)}</dd></div>
+              <div><dt>Paid</dt><dd>{formatMoney(budgetHealth?.paidMinor ?? 0, currency)}</dd></div>
+              <div><dt>Committed outstanding</dt><dd>{formatMoney(budgetHealth?.outstandingCommittedMinor ?? 0, currency)}</dd></div>
+            </dl>
+          </section>
+
+          <section className="print-section">
+            <h2>Timeline and next steps</h2>
+            <table className="print-table">
+              <thead><tr><th scope="col">Task</th><th scope="col">Timing</th><th scope="col">Owner and session</th><th scope="col">Status</th></tr></thead>
+              <tbody>{activePlan.tasks.map((task) => {
+                const conflicts = scheduleConflicts.get(task.id) ?? [];
+                return <tr key={task.id}><th scope="row">{task.title}{task.dependencyIds.length > 0 && <small>Depends on: {task.dependencyIds.map((id) => taskById.get(id)?.title).filter(Boolean).join(", ")}</small>}{conflicts.length > 0 && <small className="print-warning">{conflicts.join(" ")}</small>}</th><td>{task.dueDate || task.timing}</td><td>{task.ownerLabel} · {sessionScopeLabel(submittedBrief.sessions, task.sessionId)}</td><td>{task.status.replaceAll("_", " ")}</td></tr>;
+              })}</tbody>
+            </table>
+          </section>
+
+          <section className="print-section">
+            <h2>Cost register</h2>
+            <ul className="print-cost-list">{activePlan.budget.items.map((cost) => {
+              const expectedGuests = expectedGuestsForCostItem(activePlan, cost);
+              const forecast = forecastCostItem(cost, expectedGuests);
+              const forecastText = forecast.lowerMinor === null
+                ? "Unknown until a price is recorded"
+                : moneyRange(forecast.lowerMinor, forecast.upperMinor ?? forecast.lowerMinor, currency);
+              const outstanding = cost.evidence === "committed" && forecast.lowerMinor !== null
+                ? Math.max(0, forecast.lowerMinor - cost.paidMinor)
+                : null;
+              return <li key={cost.id}>
+                <div className="print-cost-heading"><strong>{cost.label}</strong><span>{CATEGORY_LABELS[cost.category]} · {sessionScopeLabel(submittedBrief.sessions, cost.sessionId)} · {cost.evidence} · {cost.mandatory ? "mandatory" : "optional"}</span></div>
+                <p>Forecast: {forecastText}{cost.pricingModel === "per_guest" && forecast.lowerMinor !== null ? ` for ${forecast.units} billed guests` : ""}{cost.paidMinor > 0 ? ` · paid ${formatMoney(cost.paidMinor, currency)}` : ""}{outstanding !== null ? ` · outstanding ${formatMoney(outstanding, currency)}` : ""}</p>
+                <p>Fees {cost.feesIncluded === null ? "unknown" : cost.feesIncluded ? "included" : "excluded"} · Taxes {cost.taxesIncluded === null ? "unknown" : cost.taxesIncluded ? "included" : "excluded"} · Charge review {cost.chargesReviewed ? "complete" : "open"}</p>
+                {cost.sourceNote && <p><strong>Source / note:</strong> {cost.sourceNote}</p>}
+                {cost.exclusions.length > 0 && <p><strong>Exclusions:</strong> {cost.exclusions.join("; ")}</p>}
+                {cost.adjustments.length > 0 && <ul>{cost.adjustments.map((adjustment) => <li key={adjustment.id}>{adjustment.kind}: {adjustment.label} · {formatMoney(adjustment.amountMinor, currency)}{adjustment.pricingModel === "per_guest" ? ` per guest × ${expectedGuests} billed` : " fixed"} · Source: {adjustment.sourceNote}</li>)}</ul>}
+              </li>;
+            })}</ul>
+          </section>
+
+          <section className="print-section">
+            <h2>Ideas that fit</h2>
+            <ul className="print-idea-list">{proposal.ideas.map((idea, index) => <li key={`${index}-${idea.title}`}><strong>{idea.title}</strong><p>{idea.whyItFits}</p><small>{idea.costNote}</small></li>)}</ul>
+          </section>
+
+          <section className="print-section">
+            <h2>Vendor checklist</h2>
+            {activePlan.vendors.map((vendor) => <div className="print-vendor" key={vendor.id}>
+              <h3>{vendor.category}{vendor.name ? ` · ${vendor.name}` : ""}</h3>
+              <p>Availability: {vendor.availability.replaceAll("_", " ")} · Booking: {vendor.booking.replaceAll("_", " ")}</p>
+              <ul>{vendor.questions.map((question, index) => <li key={index}>{question}</li>)}</ul>
+              {vendor.notes && <p><strong>Host note:</strong> {vendor.notes}</p>}
+            </div>)}
+            <p className="print-note">No vendor availability or booking is confirmed unless the host recorded it above.</p>
+          </section>
+
+          <section className="print-section">
+            <h2>Open questions and assumptions</h2>
+            <div className="print-question-columns">
+              <div><h3>Worth deciding</h3><ul>{proposal.openQuestions.map((item, index) => <li key={index}>{item}</li>)}</ul></div>
+              <div><h3>Currently assumed</h3><ul>{proposal.assumptions.map((item, index) => <li key={index}>{item}</li>)}</ul></div>
+            </div>
+          </section>
+          <footer className="print-document-footer">Private planning copy · Verify prices, availability, accessibility arrangements, and local requirements before booking.</footer>
+        </article>
         <footer className="page-footer"><span>Mehfiloom <span className="brand-dot">·</span> Weave your perfect celebration.</span><span>Thoughtful plans start with your people.</span></footer>
       </main>
     </div>
