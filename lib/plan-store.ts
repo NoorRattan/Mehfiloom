@@ -93,7 +93,7 @@ export const costItemSchema = z.object({
   taxesIncluded: z.boolean().nullable().default(null),
   chargesReviewed: z.boolean().default(false),
   adjustments: z.array(costAdjustmentSchema).max(20).default([]),
-  exclusions: z.array(z.string().trim().min(2).max(160)).max(12),
+  exclusions: z.array(z.string().trim().min(1).max(160)).max(12),
   sourceNote: z.string().max(300),
 }).strict().superRefine((item, context) => {
   if (item.evidence === "unpriced" && item.amountMinor !== null) {
@@ -419,6 +419,29 @@ export type CostPayment = z.infer<typeof costPaymentSchema>;
 export type VendorRecord = z.infer<typeof vendorRecordSchema>;
 export type TaskRecord = z.infer<typeof taskRecordSchema>;
 export type SavedPlan = z.infer<typeof savedPlanSchema>;
+
+export type QuoteValidityStatus = "not_quote" | "unknown" | "current" | "expired";
+
+export function quoteValidityStatus(
+  cost: Pick<CostItem, "evidence" | "validUntil">,
+  today: string,
+): QuoteValidityStatus {
+  if (cost.evidence !== "quote") return "not_quote";
+  if (cost.validUntil === null) return "unknown";
+  return cost.validUntil < today ? "expired" : "current";
+}
+
+export function parseCostExclusions(input: string): string[] {
+  const exclusions = input.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (exclusions.length > 12) throw new Error("Record up to 12 exclusions.");
+  if (exclusions.some((line) => line.length < 1)) throw new Error("Each exclusion must contain at least 1 character.");
+  if (exclusions.some((line) => line.length > 160)) throw new Error("Each exclusion must be 160 characters or fewer.");
+  return exclusions;
+}
+
+export function evidenceAfterAmountEntry(evidence: CostItem["evidence"]): CostItem["evidence"] {
+  return evidence === "unpriced" ? "estimate" : evidence;
+}
 
 export type TaskDateResolution = {
   anchorDate: string | null;

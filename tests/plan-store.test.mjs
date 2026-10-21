@@ -13,13 +13,16 @@ import {
   calculateBudgetHealth,
   costAdjustmentSchema,
   createSavedPlan,
+  evidenceAfterAmountEntry,
   expectedGuestsForCostItem,
   forecastCostItem,
+  parseCostExclusions,
   parsePlanDocument,
   parseWorkspaceJson,
   reidentifyPlan,
   removeCostPayment,
   resolveTaskDate,
+  quoteValidityStatus,
   SECOND_OLDER_WORKSPACE_STORAGE_KEY,
   savedPlanSchema,
   serializePlanDocument,
@@ -730,6 +733,52 @@ test("per-guest quotes apply the greater of expected and minimum billable attend
   assert.equal(health.knownCostsMaxMinor, 75_000);
   assert.equal(health.forecastWithReserveMinor, 75_000 + health.reserveMinor);
   assert.equal(health.state, "within_cap");
+});
+
+test("stale quote details and unknown charges remain explicit without becoming commitments", () => {
+  const plan = makePlan();
+  const quote = {
+    ...plan.budget.items[0],
+    amountMinor: 500,
+    pricingModel: "per_guest",
+    evidence: "quote",
+    mandatory: true,
+    validUntil: "2026-10-20",
+    minimumGuestCount: 150,
+    feesIncluded: null,
+    taxesIncluded: null,
+    chargesReviewed: false,
+    exclusions: ["Delivery", "Setup and cleanup"],
+    sourceNote: "Synthetic quote Q-5; not a market quote.",
+  };
+  const withQuote = {
+    ...plan,
+    budget: { ...plan.budget, reviewComplete: true, items: [quote, ...plan.budget.items.slice(1)] },
+  };
+  const restored = parsePlanDocument(serializePlanDocument(withQuote));
+  const restoredQuote = restored.budget.items[0];
+  const health = calculateBudgetHealth(restored);
+
+  assert.equal(quoteValidityStatus(restoredQuote, "2026-10-21"), "expired");
+  assert.equal(quoteValidityStatus({ evidence: "quote", validUntil: null }, "2026-10-21"), "unknown");
+  assert.equal(quoteValidityStatus({ evidence: "quote", validUntil: "2026-10-21" }, "2026-10-21"), "current");
+  assert.equal(quoteValidityStatus({ evidence: "estimate", validUntil: "2026-10-01" }, "2026-10-21"), "not_quote");
+  assert.deepEqual(restoredQuote.exclusions, ["Delivery", "Setup and cleanup"]);
+  assert.equal(restoredQuote.minimumGuestCount, 150);
+  assert.equal(restoredQuote.evidence, "quote", "an expired quote remains labeled as a quote with a separate stale status");
+  assert.equal(health.knownCostsMinor, 75_000, "the minimum billable attendance still applies to a stale per-guest quote");
+  assert.equal(health.unresolvedMandatoryChargeCount, 1);
+  assert.equal(health.state, "unknown", "unknown fees and taxes keep the mandatory cost review unresolved");
+});
+
+test("exclusion entry is normalized and amount entry never upgrades an estimate to a quote", () => {
+  assert.deepEqual(parseCostExclusions("  Delivery  \n\nSetup and cleanup\n"), ["Delivery", "Setup and cleanup"]);
+  assert.deepEqual(parseCostExclusions("D"), ["D"], "a partial one-character exclusion remains editable while typing");
+  assert.throws(() => parseCostExclusions(Array.from({ length: 13 }, (_, index) => `Item ${index + 1}`).join("\n")), /up to 12/);
+  assert.throws(() => parseCostExclusions(`x${"a".repeat(160)}`), /160 characters or fewer/);
+  assert.equal(evidenceAfterAmountEntry("unpriced"), "estimate");
+  assert.equal(evidenceAfterAmountEntry("estimate"), "estimate");
+  assert.equal(evidenceAfterAmountEntry("quote"), "quote");
 });
 
 test("a cost range that straddles the cap is not reported as affordable", () => {

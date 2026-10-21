@@ -362,6 +362,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
 .cost-item-head > div { display: flex; flex-direction: column; gap: 4px; }
 .cost-item-head strong { color: #5a554c; font-size: 9px; }
 .cost-item-head small, .cost-evidence, .cost-evidence small { color: #928c81; font-size: 8px; line-height: 1.5; }
+.cost-evidence .quote-review-warning { color: #8c3b2b; font-weight: 700; }
 .icon-button { width: 27px; height: 27px; display: grid; place-items: center; border: 1px solid #eee4e0; border-radius: 7px; color: #965d5c; background: #fffafa; cursor: pointer; }
 .cost-edit-grid, .vendor-edit-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 10px; }
 .cost-edit-grid label, .vendor-edit-grid label, .add-cost-grid label { min-width: 0; display: flex; flex-direction: column; gap: 5px; color: #71695e; font-size: 8px; font-weight: 700; }
