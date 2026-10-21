@@ -144,6 +144,31 @@ test("accepting a revision recalculates the cap and carries host work forward", 
   assert.deepEqual(validateSavedPlan(revised), revised);
 });
 
+test("generated listing hours do not upgrade vendor availability during revision", () => {
+  const current = createSavedPlan(EXAMPLE_BRIEF, EXAMPLE_BRIEF, EXAMPLE_PROPOSAL, "listing-hours-revision", CREATED_AT, "ai");
+  const proposal = structuredClone(EXAMPLE_PROPOSAL);
+  proposal.vendorChecklist[0] = {
+    ...proposal.vendorChecklist[0],
+    questions: [
+      "The listing reports Wednesday to Sunday hours; can you confirm 2027-02-14 availability?",
+      "What capacity and access arrangements can the venue confirm?",
+      "Which hire costs, deposits, and cancellation terms apply?",
+    ],
+  };
+  proposal.ideas[0] = {
+    ...proposal.ideas[0],
+    costNote: "Listed hours are 9 a.m. to 5 p.m.; availability for the event date is still unknown.",
+  };
+  const candidate = createSavedPlan(current.planBrief, current.planBrief, proposal, current.id, GENERATED_AT, "ai");
+
+  const revised = acceptPlanRevision(current, current, candidate, "Account for the venue listing hours.", ACCEPTED_AT);
+  const venue = revised.vendors.find((vendor) => vendor.category === "Venue");
+
+  assert.match(revised.proposal.ideas[0].costNote, /availability.*still unknown/);
+  assert.equal(venue.availability, "unknown");
+  assert.equal(venue.checkedAt, null);
+});
+
 test("reordering suggested vendors never moves an existing cost to a different vendor category", () => {
   const current = makeEditedPlan();
   const reorderedProposal = structuredClone(EXAMPLE_PROPOSAL);

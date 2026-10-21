@@ -40,6 +40,37 @@ function makePlan(id = "plan-one", eventName = EXAMPLE_BRIEF.eventName) {
   return createSavedPlan(brief, brief, EXAMPLE_PROPOSAL, id, CREATED_AT);
 }
 
+test("a vendor listing and opening hours do not confirm event-date availability", () => {
+  const brief = {
+    ...EXAMPLE_BRIEF,
+    eventDate: "2027-02-14",
+    style: "A venue directory lists Wednesday to Sunday hours from 9 a.m. to 5 p.m.; no one has asked about the event date.",
+  };
+  const proposal = structuredClone(EXAMPLE_PROPOSAL);
+  proposal.vendorChecklist[0] = {
+    ...proposal.vendorChecklist[0],
+    category: "Venue listing",
+    questions: [
+      "The listing reports Wednesday to Sunday hours; is the venue available on 2027-02-14?",
+      "What capacity and access arrangements can the venue confirm?",
+      "Which hire costs, deposits, and cancellation terms apply?",
+    ],
+  };
+  proposal.ideas[0] = {
+    ...proposal.ideas[0],
+    costNote: "Listed hours are 9 a.m. to 5 p.m.; this does not confirm availability for the event date.",
+  };
+  proposal.assumptions[1] = "A listing's opening hours are not confirmation that the venue is available for the event date.";
+
+  const plan = createSavedPlan(brief, brief, proposal, "t006-listing-hours", CREATED_AT, "ai");
+
+  assert.match(plan.proposal.ideas[0].costNote, /does not confirm availability/);
+  assert.match(plan.proposal.assumptions[1], /not confirmation.*event date/i);
+  assert.ok(plan.vendors.every((vendor) => vendor.availability === "unknown"));
+  assert.ok(plan.vendors.every((vendor) => vendor.checkedAt === null));
+  assert.ok(plan.vendors.every((vendor) => vendor.name === null && vendor.notes === ""));
+});
+
 test("task dependency editing prevents self-links, duplicates, and direct or transitive cycles", () => {
   const plan = makePlan();
   const tasks = plan.tasks.slice(0, 4).map((task) => ({ ...task, dependencyIds: [] }));

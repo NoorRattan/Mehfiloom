@@ -127,6 +127,12 @@ test("the sample proposal conforms to the same runtime contract used for model o
   assert.equal(proposalSchema.parse(sessionTask).timeline[0].sessionId, "welcome-session");
 });
 
+test("model proposals cannot set operational vendor availability", () => {
+  const proposal = structuredClone(EXAMPLE_PROPOSAL);
+  proposal.vendorChecklist[0].availability = "confirmed";
+  assert.equal(proposalSchema.safeParse(proposal).success, false);
+});
+
 test("each event example is valid, distinct, access-aware, and culturally optional", () => {
   const signatures = new Set();
   const eventRelevance = {
@@ -186,7 +192,9 @@ test("Groq adapter sends a bounded strict structured request and validates retur
   assert.deepEqual(await generate(brief), EXAMPLE_PROPOSAL);
   assert.equal(capturedRequest.model, "openai/gpt-oss-120b");
   assert.match(capturedRequest.messages[0].content, /untrusted user-provided data/);
+  assert.match(capturedRequest.messages[0].content, /opening-hours schedule does not establish availability for the event's exact date/i);
   assert.match(capturedRequest.messages[1].content, /A synthetic test gathering/);
+  assert.match(capturedRequest.messages[1].content, /opening hours are lead information only, never event-date availability/i);
   assert.equal(capturedRequest.max_completion_tokens, 3000);
   assert.equal(capturedRequest.reasoning_effort, "low");
   assert.equal(capturedRequest.response_format.type, "json_schema");
