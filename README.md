@@ -4,7 +4,7 @@
 
 Mehfiloom is a celebration and event planning assistant for weddings, birthdays, and community gatherings. It turns a host's brief into an editable planning draft with a budget allocation, timeline, vendor questions, personalized ideas, and visible assumptions.
 
-[Open the hosted app](https://mehfiloom.vercel.app/). The live deployment may not include the latest changes on this branch.
+[Open the hosted app](https://mehfiloom.vercel.app/). Production deployments on Vercel follow the `main` branch.
 
 ## What it does
 
@@ -35,15 +35,26 @@ Generated content is untrusted planning text. It can contradict requirements or 
 
 ## Verification
 
-The repository includes unit and endpoint tests, Playwright browser checks, TypeScript, lint, a production build, and dependency audit gates in GitHub Actions. At the latest local verification checkpoint, 87 unit tests and 12 browser tests passed; lint, type-check, production build, and the production dependency audit passed. `npm audit --omit=dev` reported no production vulnerabilities.
+The repository includes unit and endpoint tests, Playwright browser checks, TypeScript, lint, a production build, and dependency audit gates in GitHub Actions. At the 2026-10-23 local verification checkpoint, 87 unit tests and 13 browser tests passed; lint, type-check, production build, and the production dependency audit passed. The browser suite includes keyboard focus after financial edits, revision review, persistence, import/export, and mocked provider failure. `npm audit --omit=dev` reported no production vulnerabilities.
 
 The full dependency audit still reports five development dependency paths to the unpatched [`braces` advisory GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm). The audit report script tracks this known advisory and fails on newly reported findings. See [the performance baseline](docs/performance-baseline.md) for one-run Lighthouse lab results and their limitations.
+
+### Evaluation evidence
+
+| Parameter | Evidence in this prototype |
+| --- | --- |
+| Code Quality | TypeScript, shared domain logic, Zod validation, and focused brief, timeline, budget, revision and file-action components. |
+| Security | Server-only provider access, bounded JSON requests, generic errors, no-store responses, security headers and a process-local request limit. Production enforcement remains unverified. |
+| Efficiency | Exact minor-unit budget calculations and a documented local production Lighthouse baseline; no field-performance claim. |
+| Testing | Domain and mocked endpoint tests, isolated Playwright journeys, and CI gates for lint, types, build and dependency audits. |
+| Accessibility | Labeled controls, focus management, keyboard journeys and narrow reflow checks; full manual assistive-technology verification remains open. |
+| Problem Statement Alignment | Weddings, birthdays and community events with budgets, timelines, vendor checklists and personalized draft ideas, plus revision review and local backup. Generated content requires host review. |
 
 ## Known limitations before release
 
 - A bounded live comparison used 18 fictional cases and 36 requests across two prompt variants. Only 9 outputs per variant passed schema validation. Manual review found 0 of 9 current-prompt outputs and 1 of 9 neutral-prompt outputs semantically acceptable under the fixture checks. Failures included hard constraints, affordability claims, allergy safety, and inferred preferences. This was not a user study. Do not treat structured output or the scores as evidence of reliable real-world planning.
 - Do not run another live model evaluation without an explicitly authorized request ceiling and spend limit. Use fresh holdout cases for future prompt evaluation.
-- The app's in-memory generation limit is process-local and does not coordinate across server instances. Vercel Firewall configuration is documented, but production enforcement at threshold, deployment-environment scope, provider quotas, and slow-provider timeout behavior have not been confirmed end to end.
+- The app's in-memory generation limit is process-local and does not coordinate across server instances. Vercel Firewall configuration and enforcement, deployment-environment scope, provider quotas, and slow-provider timeout behavior have not been independently verified end to end.
 - Automated browser checks cover core flows, a keyboard-only brief and revision journey, export, and narrow reflow. A full manual keyboard session, screen-reader testing, actual browser zoom at 200%, and host feedback remain outstanding.
 - Print output has been rendered and reviewed for Letter and A4, but native browser print-preview behavior has not been confirmed on a range of browsers and printers.
 - No live vendor-price, calendar-reminder, shared-account, or cross-device sync integrations are included.

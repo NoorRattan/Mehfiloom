@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { formatMoney } from "@/lib/planner";
 import { forecastCostItem, type CostAdjustment, type CostItem } from "@/lib/plan-store";
 
@@ -67,13 +67,16 @@ function AdjustmentFields({
   draft,
   currency,
   onChange,
+  context,
 }: {
   draft: CostAdjustmentDraft;
   currency: string;
   onChange: (field: keyof CostAdjustmentDraft, value: string) => void;
+  context: string;
 }) {
   return (
-    <div className="adjustment-fields">
+    <fieldset className="adjustment-fields" style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+      <legend className="visually-hidden">{context}</legend>
       <label>Type<select value={draft.kind} onChange={(event) => onChange("kind", event.target.value)}>
         <option value="discount">Discount</option><option value="fee">Fee</option><option value="tax">Tax</option>
       </select></label>
@@ -84,7 +87,7 @@ function AdjustmentFields({
       <label>Lower amount ({currency})<input inputMode="decimal" value={draft.amount} onChange={(event) => onChange("amount", event.target.value)} placeholder="e.g. 0" /></label>
       <label>Upper amount ({currency})<input inputMode="decimal" value={draft.amountMax} onChange={(event) => onChange("amountMax", event.target.value)} placeholder="Same as lower" /></label>
       <label className="adjustment-source">Source and notes<input value={draft.sourceNote} minLength={3} maxLength={300} onChange={(event) => onChange("sourceNote", event.target.value)} placeholder="Who stated this amount?" /></label>
-    </div>
+    </fieldset>
   );
 }
 
@@ -116,10 +119,10 @@ function ExistingAdjustment({
 
   return (
     <li className="adjustment-edit-row">
-      <AdjustmentFields draft={draft} currency={currency} onChange={change} />
+      <AdjustmentFields draft={draft} currency={currency} onChange={change} context={`${KIND_LABELS[adjustment.kind]}: ${adjustment.label}`} />
       <div className="adjustment-row-actions">
-        <button type="button" onClick={() => onSave(draft)}>Save line</button>
-        <button className="adjustment-remove" type="button" onClick={onRemove}>Remove line</button>
+        <button type="button" onClick={() => onSave(draft)} aria-label={`Save line: ${adjustment.label}`}>Save line</button>
+        <button className="adjustment-remove" type="button" onClick={onRemove} aria-label={`Remove line: ${adjustment.label}`}>Remove line</button>
       </div>
     </li>
   );
@@ -136,6 +139,7 @@ export function CostAdjustmentsEditor({
   onReview,
 }: CostAdjustmentsEditorProps) {
   const [newDraft, setNewDraft] = useState(emptyDraft);
+  const addButtonRef = useRef<HTMLButtonElement>(null);
   const forecast = forecastCostItem(cost, expectedGuests);
   const changeNewDraft = (field: keyof CostAdjustmentDraft, value: string) => setNewDraft((current) => ({ ...current, [field]: value }));
   const baseTotal = forecast.baseLowerMinor === null || forecast.baseUpperMinor === null
@@ -170,14 +174,24 @@ export function CostAdjustmentsEditor({
           adjustment={adjustment}
           currency={currency}
           editing={editing}
-          onSave={(draft) => onSave(adjustment.id, draft)}
-          onRemove={() => onRemove(adjustment.id)}
+          onSave={(draft) => {
+            const saved = onSave(adjustment.id, draft);
+            // Saved values remount the row to reset its draft. Keep keyboard focus
+            // on a stable control instead of losing it with the old row.
+            if (saved) addButtonRef.current?.focus();
+            return saved;
+          }}
+          onRemove={() => {
+            const removed = onRemove(adjustment.id);
+            if (removed) addButtonRef.current?.focus();
+            return removed;
+          }}
         />)}
       </ul> : <p className="adjustment-empty">No separate adjustment amounts recorded.</p>}
       {editing && <div className="adjustment-add-form">
         <h4>Add a sourced amount</h4>
-        <AdjustmentFields draft={newDraft} currency={currency} onChange={changeNewDraft} />
-        <button type="button" onClick={() => { if (onSave(null, newDraft)) setNewDraft(emptyDraft()); }}>Add adjustment</button>
+        <AdjustmentFields draft={newDraft} currency={currency} onChange={changeNewDraft} context={`New adjustment for ${cost.label}`} />
+        <button ref={addButtonRef} type="button" onClick={() => { if (onSave(null, newDraft)) setNewDraft(emptyDraft()); }}>Add adjustment</button>
       </div>}
       {editing && cost.amountMinor !== null && <label className="checkbox-field adjustment-review"><input type="checkbox" checked={cost.chargesReviewed} onChange={(event) => onReview(event.target.checked)} /> I checked the source for both fees and taxes.</label>}
       {!editing && <p className="adjustment-review-state">{cost.chargesReviewed ? "Fee and tax source reviewed." : cost.mandatory ? "Mandatory charge review is incomplete." : "Review fees and taxes before relying on this forecast."}</p>}

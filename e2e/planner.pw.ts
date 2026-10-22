@@ -298,6 +298,51 @@ test("a recorded forecast above the cap is announced as a budget conflict", asyn
   await expect(page.locator(".costs-section").getByRole("alert")).toContainText("This recorded forecast is above the cap.");
 });
 
+test("financial edits keep keyboard focus after adjustment changes and payment removal", async ({ page }) => {
+  await page.goto("/planner/birthday");
+  await page.getByRole("button", { name: "Edit draft" }).click();
+  const costForm = page.locator(".add-cost-form");
+  await costForm.getByLabel("Label", { exact: true }).fill("Fictional hall commitment");
+  await costForm.getByLabel("Evidence").selectOption("committed");
+  await costForm.getByLabel(/Lower amount \/ rate/).fill("1000");
+  await costForm.getByRole("button", { name: "Add cost" }).click();
+
+  const cost = page.locator(".cost-item").filter({ has: page.locator(".cost-item-head strong", { hasText: "Fictional hall commitment" }) });
+  const newAdjustment = cost.getByRole("group", { name: "New adjustment for Fictional hall commitment" });
+  await newAdjustment.getByLabel("Source line").fill("Fictional delivery fee");
+  await newAdjustment.getByLabel(/Lower amount/).fill("100");
+  await newAdjustment.getByLabel("Source and notes").fill("Synthetic quote for browser regression only");
+  const addAdjustment = cost.getByRole("button", { name: "Add adjustment" });
+  await addAdjustment.click();
+
+  const savedAdjustment = cost.getByRole("group", { name: "Fee: Fictional delivery fee", exact: true });
+  await expect(savedAdjustment.getByLabel(/Lower amount/)).toHaveValue("100");
+  await savedAdjustment.getByLabel(/Lower amount/).fill("80");
+  await cost.getByRole("button", { name: "Save line: Fictional delivery fee", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(savedAdjustment.getByLabel(/Lower amount/)).toHaveValue("80");
+  await expect(addAdjustment).toBeFocused();
+
+  await cost.getByRole("button", { name: "Remove line: Fictional delivery fee", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(savedAdjustment).toHaveCount(0);
+  await expect(addAdjustment).toBeFocused();
+
+  const paymentForm = cost.getByRole("form", { name: "Record payment for Fictional hall commitment" });
+  const paymentAmount = paymentForm.getByLabel(/Amount/);
+  await paymentAmount.fill("200");
+  await paymentForm.getByLabel("Paid on").fill("2026-10-01");
+  await paymentForm.getByLabel("Note").fill("Fictional deposit");
+  await paymentForm.getByRole("button", { name: "Record payment" }).click();
+  const paymentHistory = cost.getByRole("region", { name: "Payment history for Fictional hall commitment" });
+  await expect(paymentHistory.locator("li")).toHaveCount(1);
+  await paymentHistory.getByRole("button", { name: /Remove payment.*Fictional hall commitment.*Fictional deposit/ }).focus();
+  await page.keyboard.press("Enter");
+  await expect(paymentHistory.locator("li")).toHaveCount(0);
+  await expect(paymentHistory).toContainText("No payments recorded.");
+  await expect(paymentAmount).toBeFocused();
+});
+
 test("exported plans can be imported into the isolated test workspace", async ({ page }) => {
   await page.goto("/planner/community");
   await page.getByRole("button", { name: "Use example" }).click();
