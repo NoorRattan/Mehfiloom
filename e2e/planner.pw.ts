@@ -301,6 +301,7 @@ test("a recorded forecast above the cap is announced as a budget conflict", asyn
 test("financial edits keep keyboard focus after adjustment changes and payment removal", async ({ page }) => {
   await page.goto("/planner/birthday");
   await page.getByRole("button", { name: "Edit draft" }).click();
+  await expect(page.getByRole("button", { name: "Done editing" })).toBeVisible();
   const costForm = page.locator(".add-cost-form");
   await costForm.getByLabel("Label", { exact: true }).fill("Fictional hall commitment");
   await costForm.getByLabel("Evidence").selectOption("committed");
@@ -308,6 +309,8 @@ test("financial edits keep keyboard focus after adjustment changes and payment r
   await costForm.getByRole("button", { name: "Add cost" }).click();
 
   const cost = page.locator(".cost-item").filter({ has: page.locator(".cost-item-head strong", { hasText: "Fictional hall commitment" }) });
+  await expect(cost).toHaveCount(1);
+  await expect(cost).toBeVisible();
   const newAdjustment = cost.getByRole("group", { name: "New adjustment for Fictional hall commitment" });
   await newAdjustment.getByLabel("Source line").fill("Fictional delivery fee");
   await newAdjustment.getByLabel(/Lower amount/).fill("100");
