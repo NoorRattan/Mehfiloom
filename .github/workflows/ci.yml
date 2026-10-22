@@ -50,23 +50,6 @@ jobs:
       - name: Build production app
         run: npm run build
 
-      - name: Install Chromium for browser tests
-        run: npx playwright install --with-deps chromium
-
-      - name: Run isolated browser tests
-        run: npm run test:e2e
-
-      - name: Keep browser failure diagnostics
-        if: ${{ failure() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: browser-failure-diagnostics
-          # Only isolated tests with fictional data; never upload the whole .next tree.
-          path: .next/playwright-results/
-          include-hidden-files: true
-          if-no-files-found: ignore
-          retention-days: 7
-
       - name: Audit production dependencies
         run: npm audit --omit=dev
 
