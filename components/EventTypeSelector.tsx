@@ -36,7 +36,7 @@ export function EventTypeSelector({ value, hasError, onChange }: EventTypeSelect
             aria-pressed={value === type}
             onClick={() => onChange(type)}
           >
-            <span className={`event-type-mark mark-${type}`}>{EVENT_MARKS[type]}</span>
+            <span className={`event-type-mark mark-${type}`} aria-hidden="true">{EVENT_MARKS[type]}</span>
             <span>{EVENT_LABELS[type]}</span>
           </button>
         ))}

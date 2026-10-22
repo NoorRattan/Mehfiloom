@@ -10,6 +10,6 @@ Measured on 2026-10-22 against the local optimized Next.js production build with
 | `/birthday` | 100 | 100 | 100 | 0.3 s | 0.8 s | 10 ms | 0 | 0.4 s |
 | `/community` | 100 | 100 | 100 | 0.3 s | 0.8 s | 0 ms | 0 | 0.3 s |
 
-The automated accessibility and best-practice categories reported no failed audits on these routes. Playwright checks the core keyboard path, a 320 CSS-pixel viewport, and a 640 CSS-pixel width as the 200%-zoom equivalent of a 1280-pixel viewport. Letter and A4 PDFs of the synthetic example plan were rendered and visually reviewed; the review caught and fixed a printed skip link. A full manual keyboard session, screen-reader behavior, and actual browser zoom at 200% remain open release checks.
+The automated accessibility and best-practice categories reported no failed audits on these routes. Playwright covers a keyboard-only brief, draft, revision-acceptance, and export journey, checks a 320 CSS-pixel viewport, and checks a 640 CSS-pixel width as the 200%-zoom equivalent of a 1280-pixel viewport. Letter and A4 PDFs of the synthetic example plan were rendered and visually reviewed; the review caught and fixed a printed skip link. A full manual keyboard session, screen-reader behavior, and actual browser zoom at 200% remain open release checks.
 
 On this Windows runner, Lighthouse wrote each JSON report successfully, then reported `EPERM` while removing its temporary Chrome profile. The scores above were read from those completed report files. This cleanup issue did not change the site or its local browser data.

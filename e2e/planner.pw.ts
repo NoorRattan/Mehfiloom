@@ -25,6 +25,21 @@ async function stubGeneration(page: Page, requests: unknown[] = []) {
   });
 }
 
+async function tabTo(page: Page, locator: ReturnType<Page["getByRole"]>, maxTabs = 160) {
+  for (let index = 0; index < maxTabs; index += 1) {
+    if (await locator.evaluate((element) => element === document.activeElement)) return;
+    await page.keyboard.press("Tab");
+  }
+
+  throw new Error("Keyboard focus did not reach the requested control.");
+}
+
+async function keyboardFill(page: Page, locator: ReturnType<Page["getByRole"]>, value: string) {
+  await tabTo(page, locator);
+  await page.keyboard.press("Control+A");
+  await page.keyboard.type(value);
+}
+
 test("wedding, birthday, and community planners render the core planning sections", async ({ page }) => {
   const routes = [
     { path: "/planner/wedding", title: /Planning a wedding/i },
@@ -43,8 +58,118 @@ test("wedding, birthday, and community planners render the core planning section
     await expect(page.getByRole("heading", { name: "Ideas that fit" })).toBeVisible();
     const verificationNotice = page.getByRole("complementary", { name: "Treat this as a planning draft" });
     await expect(verificationNotice).toBeVisible();
-    await expect(verificationNotice).toContainText("does not verify prices");
+    await expect(verificationNotice).toContainText("does not verify affordability, prices");
+    await expect(verificationNotice).toContainText("Example suggestions use synthetic content and are not verified facts");
+    if (route.path === "/planner/wedding") {
+      await expect(verificationNotice).toContainText("Vegetarian meal options, step-free access, and an indoor weather backup.");
+    }
+    await expect(page.locator(".budget-topline")).toContainText("Affordability not verified");
   }
+});
+
+test("removing a session moves focus to the next available session control", async ({ page }) => {
+  await page.goto("/planner/wedding");
+  const addSession = page.getByRole("button", { name: "Add a session" });
+  await addSession.click();
+  await addSession.click();
+  await addSession.click();
+
+  let sessions = page.locator(".session-row");
+  await expect(sessions).toHaveCount(3);
+  await sessions.nth(1).getByRole("button", { name: "Remove Session 2" }).click();
+  sessions = page.locator(".session-row");
+  await expect(sessions).toHaveCount(2);
+  await expect(sessions.nth(1).getByRole("textbox", { name: "Session 2 name" })).toBeFocused();
+
+  await sessions.nth(1).getByRole("button", { name: "Remove Session 3" }).click();
+  sessions = page.locator(".session-row");
+  await expect(sessions).toHaveCount(1);
+  await expect(sessions.first().getByRole("textbox", { name: "Session 1 name" })).toBeFocused();
+
+  await sessions.first().getByRole("button", { name: "Remove Session 1" }).click();
+  await expect(page.locator(".session-row")).toHaveCount(0);
+  await expect(addSession).toBeFocused();
+});
+
+test("invalid brief validation focuses and describes the first field needing attention", async ({ page }) => {
+  await page.goto("/planner/community");
+  const eventName = page.getByRole("textbox", { name: "Event name" });
+  await eventName.fill("");
+  await page.getByRole("button", { name: "Create my plan" }).click();
+
+  await expect(eventName).toBeFocused();
+  await expect(eventName).toHaveAttribute("aria-invalid", "true");
+  await expect(eventName).toHaveAttribute("aria-describedby", "brief-error");
+  await expect(page.locator("#brief-error")).toBeVisible();
+});
+
+test("keyboard users can create a plan and accept a revision", async ({ page }) => {
+  test.setTimeout(90_000);
+  await stubGeneration(page);
+  await page.goto("/planner/wedding");
+
+  const skipLink = page.getByRole("link", { name: "Skip to main content" });
+  await page.keyboard.press("Tab");
+  await expect(skipLink).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#main-content")).toBeFocused();
+
+  const useExample = page.getByRole("button", { name: "Use example" });
+  await tabTo(page, useExample);
+  await page.keyboard.press("Enter");
+
+  const birthday = page.getByRole("button", { name: "Birthday" });
+  await tabTo(page, birthday);
+  await page.keyboard.press("Enter");
+  await expect(birthday).toHaveAttribute("aria-pressed", "true");
+
+  await keyboardFill(page, page.getByRole("textbox", { name: "Event name" }), "Keyboard-planned birthday");
+  await keyboardFill(page, page.getByRole("textbox", { name: "Where" }), "Community hall");
+  await keyboardFill(page, page.getByRole("spinbutton", { name: "Unique guests across the event" }), "90");
+
+  const addSession = page.getByRole("button", { name: "Add a session" });
+  await tabTo(page, addSession);
+  await page.keyboard.press("Enter");
+  await keyboardFill(page, page.getByRole("textbox", { name: "Session 1 name" }), "Cake and games");
+  await keyboardFill(page, page.getByRole("spinbutton", { name: "Session 1 expected guests" }), "70");
+
+  await keyboardFill(page, page.getByRole("textbox", { name: "Currency code" }), "INR");
+  await keyboardFill(page, page.getByRole("textbox", { name: "Total budget" }), "90000");
+  await keyboardFill(page, page.getByRole("textbox", { name: "Who is the day for, and what do they enjoy?" }), "A relaxed afternoon with optional games.");
+  await keyboardFill(page, page.getByRole("textbox", { name: "Must-haves & access needs" }), "Step-free entry and a quiet place to rest.");
+
+  const createPlan = page.getByRole("button", { name: "Create my plan" });
+  await tabTo(page, createPlan);
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("AI draft · review needed")).toBeVisible();
+
+  const revisionRequest = page.getByRole("textbox", { name: "What changed since this draft?" });
+  await keyboardFill(page, revisionRequest, "Keep games optional and add a quiet seated activity.");
+  const reviewRevision = page.getByRole("button", { name: "Review a revision" });
+  await tabTo(page, reviewRevision);
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("heading", { name: "Revision 1" })).toBeVisible();
+
+  const acceptRevision = page.getByRole("button", { name: "Accept revision" });
+  await tabTo(page, acceptRevision);
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("heading", { name: "A plan taking shape" })).toBeFocused();
+  await expect(page.getByRole("status").filter({ hasText: "Saved on this device" })).toBeVisible();
+});
+
+test("keyboard users can export a local plan from the plan library", async ({ page }) => {
+  await page.goto("/planner/wedding");
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: "Skip to main content" })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#main-content")).toBeFocused();
+
+  const exportPlan = page.getByRole("button", { name: "Export JSON" });
+  const downloadPromise = page.waitForEvent("download");
+  await tabTo(page, exportPlan);
+  await page.keyboard.press("Enter");
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/\.json$/);
 });
 
 test("planner reflows at a 200% zoom-equivalent width and 320 CSS pixels, and prints the plan", async ({ page }) => {
@@ -112,6 +237,7 @@ test("revision review preserves local state and sends accepted revision history"
   await page.getByRole("button", { name: "Use example" }).click();
   await page.getByRole("button", { name: "Create my plan" }).click();
   await expect(page.getByText("AI draft · review needed")).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "Treat this as a planning draft" })).toContainText("Model-generated suggestions are not verified facts");
 
   const firstRequest = "Keep activities optional and exclude dancing from the celebration.";
   await page.getByLabel("What changed since this draft?").fill(firstRequest);

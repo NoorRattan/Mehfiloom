@@ -1,4 +1,4 @@
-import { ChevronDown, CircleCheck, Store } from "lucide-react";
+import { ChevronDown, Info, Store } from "lucide-react";
 import { BUDGET_CATEGORIES, CATEGORY_LABELS, formatMoney, type PlanResult } from "@/lib/planner";
 import type { VendorRecord } from "@/lib/plan-store";
 
@@ -12,8 +12,8 @@ export function BudgetAllocationPanel({ lines, totalMinor, currency }: BudgetAll
   return (
     <div className="budget-surface">
       <div className="budget-topline">
-        <span><CircleCheck size={16} /> Allocation adds up to your cap</span>
-        <small>Planning targets · not vendor quotes</small>
+        <span><Info size={16} /> Planning allocation matches the stated cap</span>
+        <small>Affordability not verified · no prices checked</small>
       </div>
       <div className="budget-grid">
         {lines.map((line, index) => {

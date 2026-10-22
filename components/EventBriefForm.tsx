@@ -9,7 +9,7 @@ import {
   UsersRound,
   WandSparkles,
 } from "lucide-react";
-import type { FormEvent } from "react";
+import { useEffect, useRef, type FormEvent } from "react";
 import type { EventBrief } from "@/lib/planner";
 import { makeId } from "@/lib/plan-store";
 import type { ZonedDateTimeResolution } from "@/lib/schedule";
@@ -86,6 +86,29 @@ export function EventBriefForm({
   onSubmit,
   onUpdateBrief,
 }: EventBriefFormProps) {
+  const sessionNameInputs = useRef(new Map<string, HTMLInputElement>());
+  const addSessionButton = useRef<HTMLButtonElement>(null);
+  const focusAfterSessionRemoval = useRef<string | "add-session" | null>(null);
+
+  useEffect(() => {
+    const target = focusAfterSessionRemoval.current;
+    if (!target) return;
+
+    if (target === "add-session") {
+      addSessionButton.current?.focus();
+    } else {
+      sessionNameInputs.current.get(target)?.focus();
+    }
+    focusAfterSessionRemoval.current = null;
+  }, [brief.sessions]);
+
+  function removeSession(sessionId: string, index: number) {
+    const nextSessions = brief.sessions.filter((item) => item.id !== sessionId);
+    const focusSession = nextSessions[Math.min(index, nextSessions.length - 1)];
+    focusAfterSessionRemoval.current = focusSession?.id ?? "add-session";
+    onUpdateBrief("sessions", nextSessions);
+  }
+
   return (
     <aside className="brief-card">
       <div className="card-kicker"><span className="step-number">01</span> YOUR EVENT BRIEF</div>
@@ -107,23 +130,23 @@ export function EventBriefForm({
           <datalist id="iana-time-zones">{["UTC", "Asia/Kolkata", "Asia/Dubai", "Europe/London", "Europe/Paris", "America/New_York", "America/Los_Angeles", "Australia/Sydney"].map((zone) => <option key={zone} value={zone} />)}</datalist>
           <label className="field"><span>Unique guests across the event</span><span className="input-with-icon"><UsersRound size={16} /><input id="guest-count" type="number" min={1} max={10000} step={1} value={brief.guestCount} onChange={(event) => onUpdateBrief("guestCount", Number(event.target.value))} required aria-invalid={errorTargetId === "guest-count" || undefined} aria-describedby={errorTargetId === "guest-count" ? "brief-error" : undefined} /></span><small className="field-hint">An overall estimate. People may attend more than one session, so these counts are not added together.</small></label>
           <div className="field-full session-builder" role="group" aria-labelledby="session-builder-title">
-            <div className="session-builder-heading"><span id="session-builder-title" tabIndex={errorTargetId === "session-builder-title" ? -1 : undefined} aria-describedby={errorTargetId === "session-builder-title" ? "brief-error" : undefined}>Functions or sessions <small>optional</small></span><button className="text-button" type="button" disabled={brief.sessions.length >= 12} onClick={() => onUpdateBrief("sessions", [...brief.sessions, { id: makeId(), name: `Session ${brief.sessions.length + 1}`, date: "", startTime: "", startTimeOccurrence: null, guestCount: brief.guestCount }])}><Plus size={14} /> Add a session</button></div>
+            <div className="session-builder-heading"><span id="session-builder-title" tabIndex={errorTargetId === "session-builder-title" ? -1 : undefined} aria-describedby={errorTargetId === "session-builder-title" ? "brief-error" : undefined}>Functions or sessions <small>optional</small></span><button ref={addSessionButton} className="text-button" type="button" disabled={brief.sessions.length >= 12} onClick={() => onUpdateBrief("sessions", [...brief.sessions, { id: makeId(), name: `Session ${brief.sessions.length + 1}`, date: "", startTime: "", startTimeOccurrence: null, guestCount: brief.guestCount }])}><Plus size={14} /> Add a session</button></div>
             <p className="field-hint">Use this for separate wedding functions, birthday activities, or community-event time blocks. Enter only the guests expected at each one. Each local start time uses the event time zone above.</p>
             {brief.sessions.map((session, index) => {
               const sessionTimeResolution = sessionTimeResolutions.get(session.id);
               const sessionTimeDisplay = formatZonedInstant(sessionTimeResolution?.instant ?? null, brief.timeZone);
               return (
                 <div className="session-row" key={session.id}>
-                  <label>Session name<input id={`session-${session.id}-name`} value={session.name} onChange={(event) => onUpdateBrief("sessions", brief.sessions.map((item) => item.id === session.id ? { ...item, name: event.target.value } : item))} maxLength={80} placeholder={`Session ${index + 1}`} required aria-invalid={errorTargetId === `session-${session.id}-name` || undefined} aria-describedby={errorTargetId === `session-${session.id}-name` ? "brief-error" : undefined} /></label>
+                  <label>Session name<input ref={(element) => { if (element) sessionNameInputs.current.set(session.id, element); else sessionNameInputs.current.delete(session.id); }} id={`session-${session.id}-name`} aria-label={`Session ${index + 1} name`} value={session.name} onChange={(event) => onUpdateBrief("sessions", brief.sessions.map((item) => item.id === session.id ? { ...item, name: event.target.value } : item))} maxLength={80} placeholder={`Session ${index + 1}`} required aria-invalid={errorTargetId === `session-${session.id}-name` || undefined} aria-describedby={errorTargetId === `session-${session.id}-name` ? "brief-error" : undefined} /></label>
                   <div className="session-date-time">
-                    <label>Date <small>optional</small><input id={`session-${session.id}-date`} type="date" value={session.date} onInput={(event) => onUpdateBrief("sessions", brief.sessions.map((item) => item.id === session.id ? { ...item, date: event.currentTarget.value, startTimeOccurrence: null } : item))} aria-invalid={errorTargetId === `session-${session.id}-date` || undefined} aria-describedby={errorTargetId === `session-${session.id}-date` ? "brief-error" : undefined} /></label>
-                    <label>Local start time <small>optional</small><input id={`session-${session.id}-time`} type="text" inputMode="numeric" maxLength={5} placeholder="e.g. 18:30" value={session.startTime} onChange={(event) => onUpdateBrief("sessions", brief.sessions.map((item) => item.id === session.id ? { ...item, startTime: event.currentTarget.value, startTimeOccurrence: null } : item))} aria-invalid={errorTargetId === `session-${session.id}-time` || undefined} aria-describedby={errorTargetId === `session-${session.id}-time` ? "brief-error" : undefined} />
+                    <label>Date <small>optional</small><input id={`session-${session.id}-date`} aria-label={`Session ${index + 1} date`} type="date" value={session.date} onInput={(event) => onUpdateBrief("sessions", brief.sessions.map((item) => item.id === session.id ? { ...item, date: event.currentTarget.value, startTimeOccurrence: null } : item))} aria-invalid={errorTargetId === `session-${session.id}-date` || undefined} aria-describedby={errorTargetId === `session-${session.id}-date` ? "brief-error" : undefined} /></label>
+                    <label>Local start time <small>optional</small><input id={`session-${session.id}-time`} aria-label={`Session ${index + 1} local start time`} type="text" inputMode="numeric" maxLength={5} placeholder="e.g. 18:30" value={session.startTime} onChange={(event) => onUpdateBrief("sessions", brief.sessions.map((item) => item.id === session.id ? { ...item, startTime: event.currentTarget.value, startTimeOccurrence: null } : item))} aria-invalid={errorTargetId === `session-${session.id}-time` || undefined} aria-describedby={errorTargetId === `session-${session.id}-time` ? "brief-error" : undefined} />
                       {sessionTimeResolution?.status === "ambiguous" && <select aria-label={`Choose which repeated start time for ${session.name || `session ${index + 1}`}`} value={session.startTimeOccurrence ?? ""} onChange={(event) => onUpdateBrief("sessions", brief.sessions.map((item) => item.id === session.id ? { ...item, startTimeOccurrence: event.target.value === "" ? null : event.target.value as "earlier" | "later" } : item))}><option value="">Choose occurrence</option><option value="earlier">Earlier occurrence</option><option value="later">Later occurrence</option></select>}
                       {sessionTimeDisplay && <small className="field-hint">{sessionTimeDisplay}</small>}
                     </label>
                   </div>
-                  <label>Expected guests<input id={`session-${session.id}-guests`} type="number" min={1} max={10000} step={1} value={session.guestCount} onChange={(event) => onUpdateBrief("sessions", brief.sessions.map((item) => item.id === session.id ? { ...item, guestCount: Number(event.target.value) } : item))} required aria-invalid={errorTargetId === `session-${session.id}-guests` || undefined} aria-describedby={errorTargetId === `session-${session.id}-guests` ? "brief-error" : undefined} /></label>
-                  <button className="icon-button session-remove" type="button" aria-label={`Remove ${session.name || `session ${index + 1}`}`} onClick={() => onUpdateBrief("sessions", brief.sessions.filter((item) => item.id !== session.id))}><Trash2 size={15} /></button>
+                  <label>Expected guests<input id={`session-${session.id}-guests`} aria-label={`Session ${index + 1} expected guests`} type="number" min={1} max={10000} step={1} value={session.guestCount} onChange={(event) => onUpdateBrief("sessions", brief.sessions.map((item) => item.id === session.id ? { ...item, guestCount: Number(event.target.value) } : item))} required aria-invalid={errorTargetId === `session-${session.id}-guests` || undefined} aria-describedby={errorTargetId === `session-${session.id}-guests` ? "brief-error" : undefined} /></label>
+                  <button className="icon-button session-remove" type="button" aria-label={`Remove ${session.name || `session ${index + 1}`}`} onClick={() => removeSession(session.id, index)}><Trash2 size={15} /></button>
                 </div>
               );
             })}
