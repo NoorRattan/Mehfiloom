@@ -117,6 +117,12 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,
 .app-shell .revision-restore button{flex:0 0 auto}
 @media(max-width:560px){.app-shell .revision-review{padding:14px}.app-shell .revision-change-list li{grid-template-columns:1fr;gap:2px}.app-shell .revision-restore{align-items:flex-start;flex-direction:column}}
 
+.app-shell .plan-verification-notice{margin:14px 0;padding:14px 16px;border:1px solid #d8c79e;border-left:4px solid #977334;border-radius:10px;color:#51462e;background:#fbf5e5}
+.app-shell .plan-verification-notice h3{margin:5px 0;color:#45391f;font-family:var(--m-serif);font-size:16px;font-weight:600}
+.app-shell .plan-verification-notice p{margin:0;color:#62563c;font-size:11px;line-height:1.65}
+.app-shell #plan-heading:focus{outline:3px solid #315d42;outline-offset:5px;border-radius:3px}
+@media(max-width:560px){.app-shell .plan-verification-notice{padding:12px}}
+
 .app-shell .session-builder{display:grid;gap:9px;padding:13px;border:1px solid #e1dfd2;border-radius:10px;background:linear-gradient(145deg,#faf9f1,#f3f4e9)}
 .app-shell .session-builder-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .app-shell .session-builder-heading>label{color:#405143;font-size:11px;font-weight:750}
@@ -179,3 +185,95 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,
 .app-shell .payment-entry input{min-width:0;min-height:34px;padding:6px 8px;border:1px solid #d8dccf;border-radius:6px;background:#fffefa;color:#34483a;font-size:9px}
 .app-shell .payment-entry button{min-height:34px;padding:6px 10px;border:1px solid #a8b99a;border-radius:6px;color:#35533b;background:#eff4e7;font-size:9px;font-weight:700}
 @media(max-width:700px){.app-shell .payment-entry{grid-template-columns:1fr 1fr}.app-shell .payment-entry label:last-of-type{grid-column:1/-1}.app-shell .payment-entry button{grid-column:1/-1}}
+
+/* Keep the planner's supporting copy and status labels readable on pale surfaces. */
+.app-shell .card-intro,
+.app-shell .plan-subtitle,
+.app-shell .guest-summary > span,
+.app-shell .guest-summary label small,
+.app-shell .must-have-strip > span,
+.app-shell .must-have-strip p,
+.app-shell .section-label,
+.app-shell .task-count,
+.app-shell .budget-total small,
+.app-shell .budget-topline small,
+.app-shell .budget-line p,
+.app-shell .budget-footnote,
+.app-shell .timeline-copy > span,
+.app-shell .cost-item-head small,
+.app-shell .cost-evidence small,
+.app-shell .idea-item p,
+.app-shell .idea-item small,
+.app-shell .vendor-detail li,
+.app-shell .vendor-status,
+.app-shell .vendor-caveat,
+.app-shell .plan-footer,
+.app-shell .page-footer,
+.app-shell .question-columns ul,
+.app-shell .payment-history-heading span,
+.app-shell .payment-history li span,
+.app-shell .payment-history > p,
+.app-shell .adjustment-heading small,
+.app-shell .adjustment-empty,
+.app-shell .adjustment-review-state,
+.app-shell .adjustment-formula {
+  color: #566052;
+}
+
+.app-shell .budget-health.health-unknown strong { color: #6c4e1f; }
+.app-shell .priority-high { color: #763e41; }
+.app-shell .priority-medium { color: #6c4e1f; }
+.app-shell .step-two { background: #ad5038; }
+
+/* Site-wide text and accent fixes found by the Lighthouse accessibility audit. */
+#top .truth-panel .truth-points p,
+#top .event-stack .event-entry-copy > p,
+#top .footer-bottom > span,
+#top .plan-snapshot .snapshot-head small,
+#top .plan-snapshot > p,
+#top .plan-snapshot .snapshot-preview .snapshot-label > span {
+  color: #566052;
+}
+
+#top .truth-panel .eyebrow { color: #70402d; }
+#top .truth-panel .truth-points p { color: #505649; }
+#top .event-stack .event-index,
+#top .event-stack .event-link { color: #93452f !important; }
+#top #gathering-types .section-intro h2 span { color: #a74e35; }
+#top .truth-sticker { background: #ad5038; }
+
+/* Event-guide copy meets WCAG AA contrast on its light and dark surfaces. */
+#top.wedding-page .event-hero-copy > p,
+#top.wedding-page .event-hero-copy .eyebrow,
+#top.wedding-page .event-reassurance,
+#top.wedding-page .vertical-annotation { color: #505649 !important; }
+#top.wedding-page .vendor-intro > p.eyebrow,
+#top.wedding-page .decision-item > div > p,
+#top.wedding-page .question-sheet article > div > p,
+#top.wedding-page .question-sheet .sheet-label,
+#top.wedding-page .wedding-note > span { color: #566052 !important; }
+
+#top.birthday-page .birthday-hero .event-reassurance,
+#top.birthday-page .birthday-ribbon { color: #584019 !important; }
+#top.birthday-page .birthday-budget .eyebrow,
+#top.birthday-page .birthday-budget > div > p:last-child,
+#top.birthday-page .birthday-care > div:last-child > p:not(.eyebrow):not(.care-note),
+#top.birthday-page .format-tape p { color: #566052 !important; }
+#top.birthday-page .birthday-care .eyebrow { color: #873c2b !important; }
+#top.birthday-page .birthday-rhythm .rhythm-list small,
+#top.birthday-page .birthday-rhythm .rhythm-list p { color: #e5e9ef !important; }
+#top.birthday-page .birthday-cta > p:not(.eyebrow),
+#top.birthday-page .birthday-cta .eyebrow { color: #503124 !important; }
+
+#top.community-page .community-hero .event-reassurance { color: #e5e9ef !important; }
+#top.community-page .purpose-aside,
+#top.community-page .purpose-main .eyebrow,
+#top.community-page .purpose-copy { color: #4d5748 !important; }
+#top.community-page .run-sheet-intro .eyebrow,
+#top.community-page .run-sheet-intro > p:not(.eyebrow),
+#top.community-page .run-sheet-header,
+#top.community-page .run-time,
+#top.community-page .run-sheet article > div > p,
+#top.community-page .run-sheet-note,
+#top.community-page .fundraising-note .eyebrow,
+#top.community-page .fundraising-note > p { color: #505b4d !important; }

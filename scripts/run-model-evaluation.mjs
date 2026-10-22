@@ -6,6 +6,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  writeFileSync,
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,7 +20,7 @@ const REQUEST_TIMEOUT_MS = 25_000;
 const MAX_RETRIES = 0;
 const REASONING_EFFORT = "low";
 const MAX_CALLS = fixtures.length * 2;
-const MIN_GAP_MS = 2_200;
+const MIN_GAP_MS = 45_000;
 const RUN_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "Mehfiloom-project-files", "model-evaluation-runs");
 
 function sha256(value) {
@@ -232,13 +233,15 @@ function appendJsonl(outputPath, value) {
 
 function parseArgs() {
   const outputArg = process.argv.find((arg) => arg.startsWith("--output="));
+  const resumeArg = process.argv.find((arg) => arg.startsWith("--resume="));
   return {
     live: process.argv.includes("--live"),
     outputPath: outputArg ? path.resolve(outputArg.slice("--output=".length)) : null,
+    resumePath: resumeArg ? path.resolve(resumeArg.slice("--resume=".length)) : null,
   };
 }
 
-const { live, outputPath: requestedOutputPath } = parseArgs();
+const { live, outputPath: requestedOutputPath, resumePath } = parseArgs();
 const preflightResult = await preflight();
 
 if (!live) {
@@ -256,115 +259,166 @@ if (!live) {
 }
 
 const apiKey = parseEnvFile();
-const runId = "groq-" + new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
-const outputPath = requestedOutputPath ?? path.join(RUN_ROOT, runId + ".jsonl");
-if (existsSync(outputPath)) throw new Error("OUTPUT_FILE_ALREADY_EXISTS");
-mkdirSync(path.dirname(outputPath), { recursive: true });
-const appRevision = preflightResult.appRevision;
-appendJsonl(outputPath, {
-  type: "manifest",
-  runId,
-  startedAt: new Date().toISOString(),
-  provider: "Groq",
-  model: MODEL,
-  appRevision,
-  expectedAttempts: MAX_CALLS,
-  protocol: preflightResult.parameters,
-  fixtures: preflightResult.fixtures,
-});
+let runId;
+let outputPath;
+let appRevision;
+let priorResults = [];
+let attemptedPairs = new Set();
+
+if (resumePath) {
+  if (!existsSync(resumePath)) throw new Error("RESUME_FILE_NOT_FOUND");
+  outputPath = resumePath;
+  const savedRows = readFileSync(outputPath, "utf8").trim().split(/\r?\n/).map((line) => JSON.parse(line));
+  const manifest = savedRows.find((row) => row.type === "manifest");
+  if (!manifest?.runId || !Array.isArray(manifest.fixtures)) throw new Error("RESUME_MANIFEST_INVALID");
+  const savedFixtureHashes = new Map(manifest.fixtures.map((row) => [row.id, row.fixtureSha256]));
+  if (preflightResult.fixtures.some((row) => savedFixtureHashes.get(row.id) !== row.fixtureSha256)) {
+    throw new Error("RESUME_FIXTURES_CHANGED");
+  }
+  runId = manifest.runId;
+  appRevision = manifest.appRevision;
+  priorResults = savedRows.filter((row) => row.type === "result");
+  if (priorResults.length >= MAX_CALLS) throw new Error("HARD_CALL_LIMIT_REACHED");
+  attemptedPairs = new Set(priorResults.map((row) => row.caseId + ":" + row.variant));
+  writeFileSync(outputPath, savedRows.filter((row) => row.type !== "summary").map((row) => JSON.stringify(row)).join("\n") + "\n", { encoding: "utf8" });
+  appendJsonl(outputPath, {
+    type: "continuation",
+    runId,
+    resumedAt: new Date().toISOString(),
+    runnerRevision: preflightResult.appRevision,
+    previousAttempts: priorResults.length,
+    remainingAttemptBudget: MAX_CALLS - priorResults.length,
+    minimumRequestGapMs: MIN_GAP_MS,
+    note: "Previously attempted variants, including provider-rejected requests, are not retried.",
+  });
+} else {
+  runId = "groq-" + new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
+  outputPath = requestedOutputPath ?? path.join(RUN_ROOT, runId + ".jsonl");
+  if (existsSync(outputPath)) throw new Error("OUTPUT_FILE_ALREADY_EXISTS");
+  mkdirSync(path.dirname(outputPath), { recursive: true });
+  appRevision = preflightResult.appRevision;
+  appendJsonl(outputPath, {
+    type: "manifest",
+    runId,
+    startedAt: new Date().toISOString(),
+    provider: "Groq",
+    model: MODEL,
+    appRevision,
+    runnerRevision: preflightResult.appRevision,
+    expectedAttempts: MAX_CALLS,
+    protocol: preflightResult.parameters,
+    fixtures: preflightResult.fixtures,
+  });
+}
 
 const realClient = new Groq({ apiKey });
-let attempts = 0;
-let completed = 0;
+let attempts = priorResults.length;
+let providerResponses = priorResults.filter((row) => row.httpStatus === 200).length;
+let schemaValidResponses = priorResults.filter((row) => row.schemaValid === true).length;
 let seed = 0x6d656866;
 let lastStartedAt = 0;
-let estimatedCostUpperUsd = 0;
+let estimatedCostUpperUsd = priorResults.reduce((total, row) => {
+  const input = row.usage?.inputTokens;
+  const output = row.usage?.outputTokens;
+  if (!Number.isFinite(input) || !Number.isFinite(output)) return total;
+  return total + input * 0.15 / 1_000_000 + output * 0.60 / 1_000_000;
+}, 0);
 let aborted = false;
 
 function accountEstimate(metadata) {
-  if (!metadata.usage || metadata.costEstimateRecorded) return;
-  const input = metadata.usage.inputTokens;
-  const output = metadata.usage.outputTokens;
-  if (!Number.isFinite(input) || !Number.isFinite(output)) return;
-  estimatedCostUpperUsd += input * 0.15 / 1_000_000;
-  estimatedCostUpperUsd += output * 0.60 / 1_000_000;
-  metadata.costEstimateRecorded = true;
+  if (metadata.usage && !metadata.costEstimateRecorded) {
+    const input = metadata.usage.inputTokens;
+    const output = metadata.usage.outputTokens;
+    if (Number.isFinite(input) && Number.isFinite(output)) {
+      estimatedCostUpperUsd += input * 0.15 / 1_000_000;
+      estimatedCostUpperUsd += output * 0.60 / 1_000_000;
+      metadata.costEstimateRecorded = true;
+    }
+  }
   metadata.estimatedCostUpperUsd = Number(estimatedCostUpperUsd.toFixed(6));
 }
 
+const schedule = [];
 for (const entry of fixtures) {
   const order = seededBit(seed);
   seed = order.next || 1;
   const variants = order.bit === 0 ? ["current", "neutral"] : ["neutral", "current"];
-  for (const variant of variants) {
-    if (attempts >= MAX_CALLS) throw new Error("HARD_CALL_LIMIT_REACHED");
-    const waitMs = Math.max(0, MIN_GAP_MS - (Date.now() - lastStartedAt));
-    if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
-    lastStartedAt = Date.now();
-    attempts += 1;
-    const metadata = {
-      type: "result",
-      runId,
+  for (const variant of variants) schedule.push({ entry, variant });
+}
+
+for (const { entry, variant } of schedule) {
+  if (attemptedPairs.has(entry.id + ":" + variant)) continue;
+  if (attempts >= MAX_CALLS) break;
+  const waitMs = Math.max(0, MIN_GAP_MS - (Date.now() - lastStartedAt));
+  if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+  lastStartedAt = Date.now();
+  attempts += 1;
+  const metadata = {
+    type: "result",
+    runId,
+    sequence: attempts,
+    caseId: entry.id,
+    split: entry.split,
+    variant,
+    fixtureSha256: sha256(canonical(entry.brief)),
+    appRevision,
+    runnerRevision: preflightResult.appRevision,
+    modelRequested: MODEL,
+    schemaSha256: preflightResult.parameters.responseSchemaSha256,
+    maxCompletionTokens: MAX_COMPLETION_TOKENS,
+    reasoningEffort: REASONING_EFFORT,
+    timeoutMs: REQUEST_TIMEOUT_MS,
+    maxRetries: MAX_RETRIES,
+    outcome: "started",
+  };
+  try {
+    const tappedClient = createCapturedClient(realClient, variant, metadata);
+    const proposal = await createProposalGenerator(tappedClient, MODEL)(entry.brief);
+    metadata.schemaValid = true;
+    metadata.proposal = sanitize(proposal);
+    metadata.outcome = "success";
+    providerResponses += 1;
+    schemaValidResponses += 1;
+    accountEstimate(metadata);
+    appendJsonl(outputPath, metadata);
+    console.log(JSON.stringify({
       sequence: attempts,
+      maxCalls: MAX_CALLS,
       caseId: entry.id,
-      split: entry.split,
       variant,
-      fixtureSha256: sha256(canonical(entry.brief)),
-      appRevision,
-      modelRequested: MODEL,
-      schemaSha256: preflightResult.parameters.responseSchemaSha256,
-      maxCompletionTokens: MAX_COMPLETION_TOKENS,
-      reasoningEffort: REASONING_EFFORT,
-      timeoutMs: REQUEST_TIMEOUT_MS,
-      maxRetries: MAX_RETRIES,
-      outcome: "started",
-    };
-    try {
-      const tappedClient = createCapturedClient(realClient, variant, metadata);
-      const proposal = await createProposalGenerator(tappedClient, MODEL)(entry.brief);
-      metadata.schemaValid = true;
-      metadata.proposal = sanitize(proposal);
-      metadata.outcome = "success";
-      completed += 1;
-      accountEstimate(metadata);
-      appendJsonl(outputPath, metadata);
-      console.log(JSON.stringify({
-        sequence: attempts,
-        maxCalls: MAX_CALLS,
-        caseId: entry.id,
-        variant,
-        outcome: metadata.outcome,
-        inputTokens: metadata.usage?.inputTokens ?? null,
-        outputTokens: metadata.usage?.outputTokens ?? null,
-        estimatedCostUpperUsd: Number(estimatedCostUpperUsd.toFixed(6)),
-      }));
-    } catch (error) {
-      accountEstimate(metadata);
-      metadata.schemaValid = metadata.responseModel ? false : null;
-      metadata.outcome = metadata.responseModel
-        ? "invalid_model_response"
-        : metadata.httpStatus
-          ? "provider_error"
-          : "transport_error";
-      metadata.error ??= errorMetadata(error);
-      appendJsonl(outputPath, metadata);
-      console.log(JSON.stringify({
-        sequence: attempts,
-        maxCalls: MAX_CALLS,
-        caseId: entry.id,
-        variant,
-        outcome: metadata.outcome,
-        httpStatus: metadata.httpStatus ?? null,
-        errorName: metadata.error?.errorName ?? null,
-        estimatedCostUpperUsd: Number(estimatedCostUpperUsd.toFixed(6)),
-      }));
-      if (Number.isInteger(metadata.httpStatus) && metadata.httpStatus >= 400) {
-        aborted = true;
-        break;
-      }
+      outcome: metadata.outcome,
+      inputTokens: metadata.usage?.inputTokens ?? null,
+      outputTokens: metadata.usage?.outputTokens ?? null,
+      estimatedCostUpperUsd: Number(estimatedCostUpperUsd.toFixed(6)),
+    }));
+  } catch (error) {
+    accountEstimate(metadata);
+    if (metadata.httpStatus === 200) providerResponses += 1;
+    metadata.schemaValid = metadata.responseModel ? false : null;
+    metadata.outcome = metadata.responseModel
+      ? "invalid_model_response"
+      : metadata.httpStatus
+        ? "provider_error"
+        : "transport_error";
+    metadata.error ??= errorMetadata(error);
+    appendJsonl(outputPath, metadata);
+    console.log(JSON.stringify({
+      sequence: attempts,
+      maxCalls: MAX_CALLS,
+      caseId: entry.id,
+      variant,
+      outcome: metadata.outcome,
+      httpStatus: metadata.httpStatus ?? null,
+      errorName: metadata.error?.errorName ?? null,
+      estimatedCostUpperUsd: Number(estimatedCostUpperUsd.toFixed(6)),
+    }));
+    // A 400 is request-specific and already counted; continue to untouched fixtures.
+    // Authentication, throttling, gateway, and other client failures still stop the run.
+    if (Number.isInteger(metadata.httpStatus) && metadata.httpStatus >= 400 && metadata.httpStatus !== 400) {
+      aborted = true;
+      break;
     }
   }
-  if (aborted) break;
 }
 
 appendJsonl(outputPath, {
@@ -372,8 +426,10 @@ appendJsonl(outputPath, {
   runId,
   finishedAt: new Date().toISOString(),
   attempts,
-  completed,
+  providerResponses,
+  schemaValidResponses,
   aborted,
+  requestsRemaining: MAX_CALLS - attempts,
   estimatedCostUpperUsd: Number(estimatedCostUpperUsd.toFixed(6)),
   outputPath,
 });
@@ -381,7 +437,8 @@ console.log(JSON.stringify({
   status: aborted ? "aborted" : "finished",
   runId,
   attempts,
-  completed,
+  providerResponses,
+  schemaValidResponses,
   maxCalls: MAX_CALLS,
   estimatedCostUpperUsd: Number(estimatedCostUpperUsd.toFixed(6)),
   outputPath,

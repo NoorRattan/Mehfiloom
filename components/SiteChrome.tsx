@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowUpRight, Menu } from "lucide-react";
+import { BrandMark } from "./BrandMark";
 
 const links = [
   { href: "/wedding", label: "Weddings" },
@@ -14,8 +15,8 @@ export function SiteHeader({ current }: { current?: EventKey }) {
     <>
       <a className="skip-link" href="#main-content">Skip to main content</a>
       <header className="site-header">
-        <Link className="wordmark" href="/" aria-label="Mehfiloom home">
-          <span className="wordmark-symbol" aria-hidden="true">m</span>
+        <Link className="wordmark" href="/">
+          <span className="wordmark-symbol"><BrandMark /></span>
           <span>mehfiloom<span className="wordmark-period">.</span></span>
         </Link>
         <nav className="site-nav" aria-label="Explore event planning">
@@ -38,8 +39,8 @@ export function SiteFooter() {
   return (
     <footer className="site-footer">
       <div className="footer-main">
-        <Link className="wordmark footer-wordmark" href="/" aria-label="Mehfiloom home">
-          <span className="wordmark-symbol" aria-hidden="true">m</span>
+        <Link className="wordmark footer-wordmark" href="/">
+          <span className="wordmark-symbol"><BrandMark /></span>
           <span>mehfiloom<span className="wordmark-period">.</span></span>
         </Link>
         <p>Better plans. More room for the people.</p>

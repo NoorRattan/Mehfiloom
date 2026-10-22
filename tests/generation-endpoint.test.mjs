@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createGenerationEndpoint, createInMemoryGenerationLimiter } from "../lib/generation-endpoint.ts";
-import { EXAMPLE_BRIEF, EXAMPLE_PROPOSAL } from "../lib/planner.ts";
+import { EXAMPLE_BRIEF, EXAMPLE_PROPOSAL, generationRequestSchema } from "../lib/planner.ts";
 
 const endpointUrl = "http://localhost/api/generate";
 
@@ -37,6 +37,39 @@ test("generation endpoint returns a no-store plan without exposing implementatio
   assert.equal(payload.result.totalMinor, 25_000_000);
   assert.equal(payload.result.allocatedMinor, 25_000_000);
   assert.equal(providerCalls(), 1);
+});
+
+test("ordinary generation forwards a validated brief in the provider-supported shape", async () => {
+  let received;
+  const { handle } = makeEndpoint({ generate: async (input) => {
+    received = input;
+    generationRequestSchema.parse(input);
+    return EXAMPLE_PROPOSAL;
+  } });
+  const response = await handle(request(EXAMPLE_BRIEF));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(received, EXAMPLE_BRIEF);
+});
+
+test("revision endpoint forwards accepted revision history intact to the generator", async () => {
+  let received;
+  const priorRevisionRequests = [
+    "Keep dancing optional and provide a quieter participation choice.",
+    "Avoid activities that require guests to stand for a long time.",
+  ];
+  const revisionRequest = "Keep the quiet option and update the welcome plan.";
+  const { handle: validatingHandle } = makeEndpoint({ generate: async (input) => {
+    received = input;
+    generationRequestSchema.parse(input);
+    return EXAMPLE_PROPOSAL;
+  } });
+  const response = await validatingHandle(request({ brief: EXAMPLE_BRIEF, priorRevisionRequests, revisionRequest }));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(received.priorRevisionRequests, priorRevisionRequests);
+  assert.equal(received.revisionRequest, revisionRequest);
+  assert.deepEqual(received.brief, EXAMPLE_BRIEF);
 });
 
 test("invalid JSON, absent body, and invalid briefs fail before a provider call", async () => {
@@ -169,6 +202,34 @@ test("provider failures return a generic no-store error and preserve the submitt
   assert.equal(response.headers.get("cache-control"), "no-store");
   assert.equal(responseText.includes(secretStack), false);
   assert.match(responseText, /Your brief is unchanged/);
+});
+
+test("provider rate limits return a generic retryable service error", async () => {
+  const privateProviderMessage = "quota exceeded api-key=secret-test-value";
+  const rateLimit = Object.assign(new Error(privateProviderMessage), { status: 429 });
+  const { handle } = makeEndpoint({ generate: async () => { throw rateLimit; } });
+  const response = await handle(request(EXAMPLE_BRIEF));
+  const payload = await response.json();
+
+  assert.equal(response.status, 503);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(payload.error.code, "PROVIDER_RATE_LIMITED");
+  assert.equal(JSON.stringify(payload).includes(privateProviderMessage), false);
+});
+
+test("provider timeouts return a generic gateway timeout", async () => {
+  const privateProviderMessage = "request timed out api-key=secret-test-value";
+  const timeout = new Error(privateProviderMessage);
+  timeout.name = "APIConnectionTimeoutError";
+  const { handle } = makeEndpoint({ generate: async () => { throw timeout; } });
+  const response = await handle(request(EXAMPLE_BRIEF));
+  const payload = await response.json();
+
+  assert.equal(response.status, 504);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(payload.error.code, "PROVIDER_TIMEOUT");
+  assert.equal(JSON.stringify(payload).includes(privateProviderMessage), false);
+  assert.match(payload.error.message, /Your brief is unchanged/);
 });
 
 test("model output that violates a deterministic budget invariant fails closed", async () => {

@@ -1,32 +1,24 @@
 "use client";
 
 import {
-  ArrowDownToLine,
   ArrowRight,
   CalendarDays,
   Check,
-  ChevronDown,
   CircleAlert,
   CircleCheck,
   ClipboardList,
   Flower2,
-  MapPin,
   Plus,
-  Printer,
   Sparkles,
-  Store,
   Trash2,
-  Upload,
   UsersRound,
-  WandSparkles,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import type { ChangeEvent, FormEvent } from "react";
+import type { FormEvent } from "react";
 import {
   BUDGET_CATEGORIES,
   CATEGORY_LABELS,
-  EVENT_TYPES,
   EXAMPLE_BRIEF,
   buildPlanResult,
   currencyDigits,
@@ -44,9 +36,6 @@ import {
   MAX_SAVED_PLANS,
   MAX_PLAN_DOCUMENT_BYTES,
   addCostPayment,
-  canAddTaskDependency,
-  canMarkTaskDone,
-  canReopenTask,
   calculateBudgetHealth,
   createSavedPlan,
   createWorkspace,
@@ -79,17 +68,18 @@ import { dateInTimeZone, resolveZonedDateTime } from "@/lib/schedule";
 import { acceptPlanRevision, diffPlanRevision, restorePreviousPlanRevision, revisionGenerationRequest, type PendingPlanRevision } from "@/lib/plan-revisions";
 import { PaymentHistoryPanel, type PaymentDraft } from "./PaymentHistoryPanel";
 import { CostAdjustmentsEditor, type CostAdjustmentDraft } from "./CostAdjustmentsEditor";
+import { PlanVerificationNotice } from "./PlanVerificationNotice";
+import { RevisionReviewPanel } from "./RevisionReviewPanel";
+import { BudgetAllocationPanel, VendorChecklistSection } from "./PlanSummarySections";
+import { PlanFileActions } from "./PlanFileActions";
+import { BrandMark } from "./BrandMark";
+import { TaskTimelineSection } from "./TaskTimelineSection";
+import { EventBriefForm } from "./EventBriefForm";
 
 const EVENT_LABELS: Record<EventType, string> = {
   wedding: "Wedding",
   birthday: "Birthday",
   community: "Community event",
-};
-
-const EVENT_MARKS: Record<EventType, string> = {
-  wedding: "W",
-  birthday: "B",
-  community: "C",
 };
 
 function makeSeedPlan(eventType: EventType, id = "example-plan") {
@@ -211,24 +201,6 @@ const EVENT_WELCOME: Record<EventType, { headline: string; copy: string; eyebrow
   },
 };
 
-const EVENT_STYLE_PROMPTS: Record<EventType, { label: string; placeholder: string; mustHaves: string }> = {
-  wedding: {
-    label: "What should it feel like?",
-    placeholder: "A relaxed garden celebration with traditions we choose together…",
-    mustHaves: "Accessibility, dietary needs, traditions you have chosen, and a weather backup…",
-  },
-  birthday: {
-    label: "Who is the day for, and what do they enjoy?",
-    placeholder: "A hands-on activity party, with a quieter spot to take a break…",
-    mustHaves: "Food allergies to confirm with parents, clear routes, supervision, or a quieter space…",
-  },
-  community: {
-    label: "What is the purpose and feel of the gathering?",
-    placeholder: "A neighbor-led evening to share food, stories, and local ideas…",
-    mustHaves: "Step-free routes, language access, volunteer roles, sanitation, and a weather backup…",
-  },
-};
-
 export default function PlannerWorkspace({ initialEventType }: { initialEventType: EventType }) {
   const [workspace, setWorkspace] = useState<Workspace>(() => createWorkspace(makeSeedPlan(initialEventType)));
   const [storageReady, setStorageReady] = useState(false);
@@ -251,12 +223,19 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
   const [revisionFeedback, setRevisionFeedback] = useState<{ tone: "success" | "error"; message: string } | null>(null);
   const [amountDrafts, setAmountDrafts] = useState<Record<string, string>>({});
   const [paymentDrafts, setPaymentDrafts] = useState<Record<string, PaymentDraft>>({});
-  const importInput = useRef<HTMLInputElement>(null);
+  const planHeadingRef = useRef<HTMLHeadingElement>(null);
+  const focusPlanHeadingAfterRevision = useRef(false);
 
   useEffect(() => {
     if (!error || !errorTargetId) return;
     document.getElementById(errorTargetId)?.focus();
   }, [error, errorTargetId]);
+
+  useEffect(() => {
+    if (!focusPlanHeadingAfterRevision.current) return;
+    focusPlanHeadingAfterRevision.current = false;
+    planHeadingRef.current?.focus();
+  }, [workspace, pendingRevision]);
 
   useEffect(() => {
     let active = true;
@@ -339,7 +318,6 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
   const plan: PlanResult = buildPlanResult(proposal, activePlan.budget.currency, activePlan.budget.capMinor);
   const briefChanged = JSON.stringify(brief) !== JSON.stringify(submittedBrief);
   const budgetTotal = plan.lines.reduce((sum, item) => sum + item.amountMinor, 0);
-  const completeCount = activePlan.tasks.filter((task) => task.status === "done").length;
   const validatedPlan = savedPlanSchema.safeParse(activePlan);
   const budgetHealth = validatedPlan.success ? calculateBudgetHealth(activePlan) : null;
   const taskById = new Map(activePlan.tasks.map((task) => [task.id, task]));
@@ -560,6 +538,7 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
         pendingRevision.candidatePlan,
         pendingRevision.request,
       );
+      focusPlanHeadingAfterRevision.current = true;
       updateWorkspace((current) => ({
         ...current,
         plans: current.plans.map((item) => item.id === revisedPlan.id ? revisedPlan : item),
@@ -581,6 +560,7 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
   }
 
   function discardRevision() {
+    focusPlanHeadingAfterRevision.current = true;
     setPendingRevision(null);
     setRevisionRequest("");
     setRevisionFeedback({ tone: "success", message: "Revision discarded. Your current plan remains unchanged." });
@@ -589,6 +569,7 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
   function restoreRevision() {
     try {
       const restoredPlan = restorePreviousPlanRevision(activePlan);
+      focusPlanHeadingAfterRevision.current = true;
       updateWorkspace((current) => ({
         ...current,
         plans: current.plans.map((item) => item.id === restoredPlan.id ? restoredPlan : item),
@@ -805,10 +786,7 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
     }
   }
 
-  async function importPlan(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
+  async function importPlan(file: File) {
     if (file.size > MAX_PLAN_DOCUMENT_BYTES) {
       setImportMessage("This plan file is too large to import safely.");
       return;
@@ -971,8 +949,8 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
     <div className="app-shell">
       <a className="skip-link" href="#main-content">Skip to main content</a>
       <header className="topbar">
-        <Link className="brand" href="/" aria-label="Mehfiloom home">
-          <span className="brand-mark" aria-hidden="true">m</span>
+        <Link className="brand" href="/">
+          <span className="brand-mark"><BrandMark /></span>
           <span className="brand-name">Mehfiloom<span className="brand-dot">.</span></span>
         </Link>
         <div className="topbar-center"><span className="status-dot" /> Planning a {EVENT_LABELS[brief.eventType].toLowerCase()}</div>
@@ -1003,10 +981,7 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
           <div className="toolbar-actions">
             <span className={`save-indicator ${storageStatus === "Saved on this device" ? "is-saved" : ""}`} role="status" aria-live="polite" aria-atomic="true"><span className="save-dot" aria-hidden="true" />{storageStatus}</span>
             <button type="button" onClick={newPlan}><Plus size={15} /> New plan</button>
-            <button type="button" onClick={exportPlan}><ArrowDownToLine size={15} /> Export JSON</button>
-            <button type="button" onClick={() => importInput.current?.click()}><Upload size={15} /> Import JSON</button>
-            <button type="button" onClick={() => window.print()}><Printer size={15} /> Print plan</button>
-            <input ref={importInput} className="visually-hidden" type="file" accept="application/json,.json" onChange={importPlan} aria-label="Choose a Mehfiloom plan JSON file" />
+            <PlanFileActions onExport={exportPlan} onImport={importPlan} onPrint={() => window.print()} />
             <button className="delete-plan-button" type="button" onClick={deletePlan}><Trash2 size={15} /> Delete</button>
           </div>
           {storageError && <div className="workspace-message is-error" role="alert">
@@ -1027,70 +1002,31 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
         </section>
 
         <div className="workspace-grid">
-          <aside className="brief-card">
-            <div className="card-kicker"><span className="step-number">01</span> YOUR EVENT BRIEF</div>
-            <div className="brief-heading-row">
-              <div><h2>Start with the feeling.</h2><p className="card-intro">A few details help us make the ideas personal and practical.</p></div>
-              <button className="text-button" type="button" onClick={loadExample} title="Restore the clearly labeled example brief"><WandSparkles size={15} /> Use example</button>
-            </div>
-            <form onSubmit={generate} noValidate>
-              <fieldset className="event-type-fieldset" id="event-type-options" tabIndex={-1} aria-describedby={errorTargetId === "event-type-options" ? "brief-error" : undefined}>
-                <legend>What are you planning?</legend>
-                <div className="event-type-grid">{EVENT_TYPES.map((type) => <button type="button" key={type} className={`event-type-option ${brief.eventType === type ? "selected" : ""}`} aria-pressed={brief.eventType === type} onClick={() => updateBrief("eventType", type)}><span className={`event-type-mark mark-${type}`}>{EVENT_MARKS[type]}</span><span>{EVENT_LABELS[type]}</span></button>)}</div>
-              </fieldset>
-              <div className="form-grid">
-                <label className="field field-full"><span>Event name</span><input id="event-name" value={brief.eventName} onChange={(e) => updateBrief("eventName", e.target.value)} maxLength={80} required aria-invalid={errorTargetId === "event-name" || undefined} aria-describedby={errorTargetId === "event-name" ? "brief-error" : undefined} /></label>
-                <label className="field"><span>Where</span><span className="input-with-icon"><MapPin size={16} /><input id="event-location" value={brief.location} onChange={(e) => updateBrief("location", e.target.value)} maxLength={100} required aria-invalid={errorTargetId === "event-location" || undefined} aria-describedby={errorTargetId === "event-location" ? "brief-error" : undefined} /></span></label>
-                <label className="field"><span>Event date <small>optional</small></span><span className="input-with-icon"><CalendarDays size={16} /><input id="event-date" type="date" value={brief.eventDate} onInput={(event) => updateBrief("eventDate", event.currentTarget.value)} aria-invalid={errorTargetId === "event-date" || undefined} aria-describedby={errorTargetId === "event-date" ? "brief-error" : undefined} /></span></label>
-                <label className="field"><span>Event time zone <small>optional until time is known</small></span><input id="event-timezone" list="iana-time-zones" value={brief.timeZone ?? ""} onChange={(event) => updateBrief("timeZone", event.target.value.trim() || null)} placeholder="Asia/Kolkata" aria-invalid={errorTargetId === "event-timezone" || undefined} aria-describedby={errorTargetId === "event-timezone" ? "timezone-help brief-error" : "timezone-help"} /><small id="timezone-help" className="field-hint">Use an IANA name. Calendar dates stay as entered; local times use this zone, never the computer’s time zone.</small></label>
-                <div className="field"><label htmlFor="event-time"><span>Local event start time <small>optional</small></span><input id="event-time" type="text" inputMode="numeric" maxLength={5} value={brief.eventTime} onChange={(event) => updateBrief("eventTime", event.currentTarget.value)} placeholder="e.g. 18:30" aria-invalid={errorTargetId === "event-time" || undefined} aria-describedby={errorTargetId === "event-time" ? "event-time-help brief-error" : "event-time-help"} /></label>
-                  {eventTimeResolution.status === "ambiguous" && <label className="time-occurrence-choice">This time occurs twice<select aria-label="Choose which repeated event time" value={brief.eventTimeOccurrence ?? ""} onChange={(event) => updateBrief("eventTimeOccurrence", event.target.value === "" ? null : event.target.value as "earlier" | "later")}><option value="">Choose occurrence</option><option value="earlier">Earlier occurrence</option><option value="later">Later occurrence</option></select></label>}
-                  <small id="event-time-help" className="field-hint">{eventTimeDisplay ? `Resolves to ${eventTimeDisplay}.` : eventTimeResolution.status === "nonexistent" ? "This local time does not exist because clocks move forward." : eventTimeResolution.status === "ambiguous" ? "Choose the earlier or later occurrence of this repeated local time." : brief.eventTime ? "Set the date and IANA time zone to resolve this local time." : "Enter a local time only when you know the event’s time zone."}</small>
-                </div>
-                <datalist id="iana-time-zones">{["UTC", "Asia/Kolkata", "Asia/Dubai", "Europe/London", "Europe/Paris", "America/New_York", "America/Los_Angeles", "Australia/Sydney"].map((zone) => <option key={zone} value={zone} />)}</datalist>
-                <label className="field"><span>Unique guests across the event</span><span className="input-with-icon"><UsersRound size={16} /><input id="guest-count" type="number" min={1} max={10000} step={1} value={brief.guestCount} onChange={(e) => updateBrief("guestCount", Number(e.target.value))} required aria-invalid={errorTargetId === "guest-count" || undefined} aria-describedby={errorTargetId === "guest-count" ? "brief-error" : undefined} /></span><small className="field-hint">An overall estimate. People may attend more than one session, so these counts are not added together.</small></label>
-                <div className="field-full session-builder" role="group" aria-labelledby="session-builder-title">
-                  <div className="session-builder-heading"><span id="session-builder-title" tabIndex={errorTargetId === "session-builder-title" ? -1 : undefined} aria-describedby={errorTargetId === "session-builder-title" ? "brief-error" : undefined}>Functions or sessions <small>optional</small></span><button className="text-button" type="button" disabled={brief.sessions.length >= 12} onClick={() => updateBrief("sessions", [...brief.sessions, { id: makeId(), name: `Session ${brief.sessions.length + 1}`, date: "", startTime: "", startTimeOccurrence: null, guestCount: brief.guestCount }])}><Plus size={14} /> Add a session</button></div>
-                  <p className="field-hint">Use this for separate wedding functions, birthday activities, or community-event time blocks. Enter only the guests expected at each one. Each local start time uses the event time zone above.</p>
-                  {brief.sessions.map((session, index) => <div className="session-row" key={session.id}>
-                    <label>Session name<input id={`session-${session.id}-name`} value={session.name} onChange={(event) => updateBrief("sessions", brief.sessions.map((item) => item.id === session.id ? { ...item, name: event.target.value } : item))} maxLength={80} placeholder={`Session ${index + 1}`} required aria-invalid={errorTargetId === `session-${session.id}-name` || undefined} aria-describedby={errorTargetId === `session-${session.id}-name` ? "brief-error" : undefined} /></label>
-                    <div className="session-date-time">
-                      <label>Date <small>optional</small><input id={`session-${session.id}-date`} type="date" value={session.date} onInput={(event) => updateBrief("sessions", brief.sessions.map((item) => item.id === session.id ? { ...item, date: event.currentTarget.value, startTimeOccurrence: null } : item))} aria-invalid={errorTargetId === `session-${session.id}-date` || undefined} aria-describedby={errorTargetId === `session-${session.id}-date` ? "brief-error" : undefined} /></label>
-                      <label>Local start time <small>optional</small><input id={`session-${session.id}-time`} type="text" inputMode="numeric" maxLength={5} placeholder="e.g. 18:30" value={session.startTime} onChange={(event) => updateBrief("sessions", brief.sessions.map((item) => item.id === session.id ? { ...item, startTime: event.currentTarget.value, startTimeOccurrence: null } : item))} aria-invalid={errorTargetId === `session-${session.id}-time` || undefined} aria-describedby={errorTargetId === `session-${session.id}-time` ? "brief-error" : undefined} />
-                        {sessionTimeResolutions.get(session.id)?.status === "ambiguous" && <select aria-label={`Choose which repeated start time for ${session.name || `session ${index + 1}`}`} value={session.startTimeOccurrence ?? ""} onChange={(event) => updateBrief("sessions", brief.sessions.map((item) => item.id === session.id ? { ...item, startTimeOccurrence: event.target.value === "" ? null : event.target.value as "earlier" | "later" } : item))}><option value="">Choose occurrence</option><option value="earlier">Earlier occurrence</option><option value="later">Later occurrence</option></select>}
-                        {formatZonedInstant(sessionTimeResolutions.get(session.id)?.instant ?? null, brief.timeZone) && <small className="field-hint">{formatZonedInstant(sessionTimeResolutions.get(session.id)?.instant ?? null, brief.timeZone)}</small>}
-                      </label>
-                    </div>
-                    <label>Expected guests<input id={`session-${session.id}-guests`} type="number" min={1} max={10000} step={1} value={session.guestCount} onChange={(event) => updateBrief("sessions", brief.sessions.map((item) => item.id === session.id ? { ...item, guestCount: Number(event.target.value) } : item))} required aria-invalid={errorTargetId === `session-${session.id}-guests` || undefined} aria-describedby={errorTargetId === `session-${session.id}-guests` ? "brief-error" : undefined} /></label>
-                    <button className="icon-button session-remove" type="button" aria-label={`Remove ${session.name || `session ${index + 1}`}`} onClick={() => updateBrief("sessions", brief.sessions.filter((item) => item.id !== session.id))}><Trash2 size={15} /></button>
-                  </div>)}
-                </div>
-                <label className="field"><span>Currency code</span><input id="event-currency" className="currency-input" value={brief.currency} onChange={(e) => updateBrief("currency", e.target.value.toUpperCase())} maxLength={3} placeholder="INR" autoCapitalize="characters" required aria-invalid={errorTargetId === "event-currency" || undefined} aria-describedby={errorTargetId === "event-currency" ? "brief-error" : undefined} /></label>
-                <label className="field field-full"><span>Total budget</span><span className="input-with-icon money-input"><span className="currency-prefix" aria-hidden="true">{brief.currency || "¤"}</span><input id="budget-amount" inputMode="decimal" value={brief.budgetAmount} onChange={(e) => updateBrief("budgetAmount", e.target.value)} placeholder="250000" required aria-invalid={errorTargetId === "budget-amount" || undefined} aria-describedby={errorTargetId === "budget-amount" ? "budget-help brief-error" : "budget-help"} /></span><small id="budget-help" className="field-hint">Planning cap in the selected currency. Use a period for decimals.</small></label>
-                <label className="field field-full"><span>{EVENT_STYLE_PROMPTS[brief.eventType].label}</span><textarea id="event-style" value={brief.style} onChange={(e) => updateBrief("style", e.target.value)} rows={3} maxLength={500} placeholder={EVENT_STYLE_PROMPTS[brief.eventType].placeholder} aria-invalid={errorTargetId === "event-style" || undefined} aria-describedby={errorTargetId === "event-style" ? "brief-error" : undefined} /></label>
-                <label className="field field-full"><span>Must-haves &amp; access needs</span><textarea id="event-must-haves" value={brief.mustHaves} onChange={(e) => updateBrief("mustHaves", e.target.value)} rows={3} maxLength={700} placeholder={EVENT_STYLE_PROMPTS[brief.eventType].mustHaves} aria-invalid={errorTargetId === "event-must-haves" || undefined} aria-describedby={errorTargetId === "event-must-haves" ? "brief-error" : undefined} /><small className="field-hint">We keep these visible in the draft instead of treating them as optional ideas.</small></label>
-                {activePlan.origin === "ai" && <label className="field field-full revision-request-field"><span>What changed since this draft?</span><textarea id="revision-request" value={revisionRequest} onChange={(event) => setRevisionRequest(event.target.value)} rows={3} minLength={8} maxLength={500} required placeholder="For example: we expect fewer guests, want a quieter welcome, and need to keep the venue accessible." aria-invalid={errorTargetId === "revision-request" || undefined} aria-describedby={errorTargetId === "revision-request" ? "brief-error" : undefined} /><small className="field-hint">Your new proposal will be reviewed separately. The current plan stays in place until you accept it.</small></label>}
-              </div>
-              {error && <div id="brief-error" className="form-error" role="alert"><CircleAlert size={17} /><span>{error}</span></div>}
-              <p className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">{generationAnnouncement}</p>
-              <button className="generate-button" type="submit" aria-busy={generating} disabled={generating || pendingRevision !== null}>{generating ? <span className="button-spinner" aria-hidden="true" /> : <Sparkles size={17} />}{" "}<span>{generating ? activePlan.origin === "ai" ? "Drafting your revision…" : "Weaving your first draft…" : activePlan.origin === "ai" ? "Review a revision" : "Create my plan"}</span>{!generating && <ArrowRight size={17} />}</button>
-              <p className="privacy-note"><span className="privacy-dot" /> Live planning sends your event brief to Groq. Revisions also send the current request and earlier accepted revision requests so stated preferences and exclusions can carry forward. Groq says inference data is not retained by default, but may be logged for up to 30 days for reliability or abuse monitoring. Use fictional details and avoid real guest names or sensitive information. <a href="https://console.groq.com/docs/your-data" target="_blank" rel="noreferrer">Groq data policy</a>.</p>
-            </form>
-          </aside>
+          <EventBriefForm
+            brief={brief}
+            eventTimeResolution={eventTimeResolution}
+            eventTimeDisplay={eventTimeDisplay}
+            sessionTimeResolutions={sessionTimeResolutions}
+            errorTargetId={errorTargetId}
+            error={error}
+            generationAnnouncement={generationAnnouncement}
+            generating={generating}
+            hasPendingRevision={pendingRevision !== null}
+            isRevision={activePlan.origin === "ai"}
+            revisionRequest={revisionRequest}
+            onRevisionRequestChange={setRevisionRequest}
+            onLoadExample={loadExample}
+            onSubmit={generate}
+            onUpdateBrief={updateBrief}
+          />
 
           <section className="plan-card" aria-labelledby="plan-heading">
-            <div className="plan-header"><div><div className="card-kicker"><span className="step-number step-two">02</span> YOUR PLANNING CANVAS</div><div className="plan-title-row"><h2 id="plan-heading">A plan taking shape</h2><span className={`origin-badge ${activePlan.origin === "ai" ? "origin-ai" : "origin-example"}`}><span className="badge-dot" /> {activePlan.origin === "ai" ? "AI draft · review needed" : "Example plan · synthetic"}</span></div><p className="plan-subtitle">A working canvas for your ideas, budget, and next steps.</p></div><button className={`edit-button ${editing ? "is-editing" : ""}`} type="button" onClick={() => setEditing((value) => !value)}>{editing ? <Check size={15} /> : <ClipboardList size={15} />}{editing ? "Done editing" : "Edit draft"}</button></div>
+            <div className="plan-header"><div><div className="card-kicker"><span className="step-number step-two">02</span> YOUR PLANNING CANVAS</div><div className="plan-title-row"><h2 id="plan-heading" ref={planHeadingRef} tabIndex={-1}>A plan taking shape</h2><span className={`origin-badge ${activePlan.origin === "ai" ? "origin-ai" : "origin-example"}`}><span className="badge-dot" /> {activePlan.origin === "ai" ? "AI draft · review needed" : "Example plan · synthetic"}</span></div><p className="plan-subtitle">A working canvas for your ideas, budget, and next steps.</p></div><button className={`edit-button ${editing ? "is-editing" : ""}`} type="button" onClick={() => setEditing((value) => !value)}>{editing ? <Check size={15} /> : <ClipboardList size={15} />}{editing ? "Done editing" : "Edit draft"}</button></div>
+            <PlanVerificationNotice />
             {briefChanged && <div className="stale-notice"><CircleAlert size={16} /> The brief has changed since this draft was made. Generate again to refresh its suggestions.</div>}
             {revisionFeedback && <div className={`revision-feedback revision-feedback-${revisionFeedback.tone}`} role={revisionFeedback.tone === "error" ? "alert" : "status"}>{revisionFeedback.message}</div>}
             {activePlan.undoRevision && <div className="revision-restore"><div><strong>Recent change</strong><span>{canRestoreRevision ? "You can restore the state from just before the last accepted revision." : "This plan has changed since that revision. The earlier state is kept, but restoring it now could remove newer work."}</span></div>{canRestoreRevision && <button className="revision-discard-button" type="button" onClick={restoreRevision}>Restore previous state</button>}</div>}
-            {pendingRevision && <section className="revision-review" aria-labelledby="revision-review-title">
-              <div className="revision-review-heading"><div><span className="section-label">REVIEW BEFORE APPLYING</span><h3 id="revision-review-title">Revision {pendingRevision.basePlan.revisionNumber + 1}</h3></div><span className="revision-version">v{pendingRevision.basePlan.revisionNumber} → v{pendingRevision.basePlan.revisionNumber + 1}</span></div>
-              <p className="revision-request-summary"><strong>Your request</strong> {pendingRevision.request}</p>
-              <ul className="revision-change-list">{pendingRevision.changes.map((change) => <li key={change.title}><strong>{change.title}</strong><span>{change.detail}</span></li>)}</ul>
-              <p className="revision-preservation-note">Accepting recalculates the budget from the new brief and resets the review if its cap, allocation, or cost lines change. Recorded costs, payments, guest counts, task progress, vendor notes, and host-edited title, overview, or theme are carried forward.</p>
-              {pendingRevisionIsStale && <div className="form-error" role="alert"><CircleAlert size={16} /><span>This plan changed while the revision was being drafted. Discard the stale draft and request a fresh revision.</span></div>}
-              <div className="revision-actions"><button className="revision-accept-button" type="button" onClick={acceptRevision} disabled={pendingRevisionIsStale}>Accept revision</button><button className="revision-discard-button" type="button" onClick={discardRevision}>Discard revision</button></div>
-            </section>}
+            {pendingRevision && <RevisionReviewPanel pendingRevision={pendingRevision} isStale={pendingRevisionIsStale} onAccept={acceptRevision} onDiscard={discardRevision} />}
             {guestsOverExpected && <div className="stale-notice"><CircleAlert size={16} /> Confirmed guests exceed the expected count. Update the event brief before relying on the allocation.</div>}
             {sessionsOverExpected.length > 0 && <div className="stale-notice"><CircleAlert size={16} /> Confirmed attendance exceeds the estimate for {sessionsOverExpected.map((attendance) => submittedBrief.sessions.find((session) => session.id === attendance.sessionId)?.name).filter(Boolean).join(", ")}. Update that session estimate before relying on its forecast.</div>}
             {quoteMinimumsOverExpected.length > 0 && <div className="stale-notice"><CircleAlert size={16} /> {quoteMinimumsOverExpected.length} cost line{quoteMinimumsOverExpected.length === 1 ? " has" : "s have"} a vendor minimum above expected attendance.</div>}
@@ -1105,93 +1041,17 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
             <div className="plan-overview"><div className="plan-overview-copy"><span className="section-label"><span className="tiny-spark">✦</span> THE STARTING IDEA</span>{editing ? <><input className="edit-title-input" aria-label="Plan title" value={proposal.conceptTitle} onChange={(e) => editProposal((current) => ({ ...current, conceptTitle: e.target.value }))} maxLength={80} /><textarea className="edit-overview-input" aria-label="Plan overview" value={proposal.overview} onChange={(e) => editProposal((current) => ({ ...current, overview: e.target.value }))} maxLength={500} rows={4} /></> : <><h3>{proposal.conceptTitle}</h3><p>{proposal.overview}</p></>}<div className="theme-note"><span className="theme-flower">✿</span><span><small>THE FEEL</small>{editing ? <input aria-label="Event theme" value={proposal.theme} onChange={(e) => editProposal((current) => ({ ...current, theme: e.target.value }))} maxLength={100} /> : proposal.theme}</span></div></div><div className="overview-art" aria-hidden="true"><span className="art-leaf leaf-a">❧</span><span className="art-flower">✿</span><span className="art-leaf leaf-b">❧</span><span className="art-orbit" /></div></div>
 
             <div className="section-heading budget-heading"><div><span className="section-label">THE BUDGET PICTURE</span><h3>Give every part a place</h3></div><span className="budget-total">{formatMoney(plan.totalMinor, plan.currency)} <small>planning cap</small></span></div>
-            <div className="budget-surface"><div className="budget-topline"><span><CircleCheck size={16} /> Allocation adds up to your cap</span><small>Planning targets · not vendor quotes</small></div><div className="budget-grid">{plan.lines.map((line, index) => { const percentage = Math.max(0, Math.min(100, (line.amountMinor / Math.max(budgetTotal, 1)) * 100)); const category = BUDGET_CATEGORIES.find((item) => item === line.category); return <div className="budget-line" key={`${line.category}-${index}`}><div className="budget-line-head"><span>{category ? CATEGORY_LABELS[category] : line.category}</span><strong>{formatMoney(line.amountMinor, plan.currency)}</strong></div><div className="budget-track"><span className={`budget-fill fill-${index % 5}`} style={{ width: `${percentage}%` }} /></div><p>{line.rationale}</p></div>; })}</div><div className="budget-footnote">The split comes from relative priorities and exact arithmetic. Local costs, tax, and vendor availability still need checking.</div></div>
+            <BudgetAllocationPanel lines={plan.lines} totalMinor={budgetTotal} currency={plan.currency} />
 
-            <div className="section-heading timeline-heading"><div><span className="section-label">SMALL STEPS, GOOD MOMENTUM</span><h3>Your next steps <span className="task-count">{completeCount}/{activePlan.tasks.length} done</span></h3><p className="card-intro">Suggested timing is a starting point. Relative dates preview against the current brief and move with event or function dates; fixed due dates stay as entered.</p></div><span className="heading-icon"><CalendarDays size={18} /></span></div>
-            <div className="timeline-list">
-              {activePlan.tasks.map((task, index) => {
-                const taskDates = resolveTaskDate(task, brief.eventDate, brief.sessions);
-                const dependencyTasks = task.dependencyIds
-                  .map((dependencyId) => taskById.get(dependencyId))
-                  .filter((dependency): dependency is TaskRecord => dependency !== undefined);
-                const unmetDependencyTasks = dependencyTasks.filter((dependency) => dependency.status !== "done");
-                const completedDependents = activePlan.tasks.filter((candidate) => candidate.status === "done" && candidate.dependencyIds.includes(task.id));
-                const blocked = task.status !== "done" && !canMarkTaskDone(task, activePlan.tasks);
-                const completedBeforePrerequisites = task.status === "done" && unmetDependencyTasks.length > 0;
-                const cannotReopen = task.status === "done" && !canReopenTask(task, activePlan.tasks);
-
-                return (
-                  <div className={`timeline-item ${task.status === "done" ? "task-done" : ""}`} key={task.id}>
-                    <button
-                      className="task-check"
-                      type="button"
-                      aria-label={blocked
-                        ? `Complete prerequisite tasks before marking complete: ${unmetDependencyTasks.map((dependency) => dependency.title).join(", ")}`
-                        : cannotReopen
-                          ? `Mark dependent tasks incomplete first: ${completedDependents.map((dependent) => dependent.title).join(", ")}`
-                          : completedBeforePrerequisites
-                            ? `Mark incomplete; prerequisites are unfinished: ${unmetDependencyTasks.map((dependency) => dependency.title).join(", ")}`
-                            : `${task.status === "done" ? "Mark incomplete" : "Mark complete"}: ${task.title}`}
-                      aria-pressed={task.status === "done"}
-                      disabled={blocked || cannotReopen}
-                      onClick={() => updateTask(task.id, (current) => ({ ...current, status: current.status === "done" ? "todo" : "done" }))}
-                    >
-                      {task.status === "done" && <Check size={13} />}
-                    </button>
-                    <div className="timeline-copy">
-                      {editing ? <>
-                        <input aria-label={`Task ${index + 1}`} value={task.title} onChange={(event) => updateTask(task.id, (current) => ({ ...current, title: event.target.value }))} maxLength={120} />
-                        <input aria-label={`Task ${index + 1} timing`} value={task.timing} onChange={(event) => updateTask(task.id, (current) => ({ ...current, timing: event.target.value }))} maxLength={80} />
-                        <div className="task-meta-edit">
-                          <label>Owner<input aria-label={`Task ${index + 1} owner`} value={task.ownerLabel} onChange={(event) => updateTask(task.id, (current) => ({ ...current, ownerLabel: event.target.value }))} maxLength={80} /></label>
-                          <label>Fixed due date<input aria-label={`Task ${index + 1} fixed due date`} type="date" value={task.dueDate ?? ""} onInput={(event) => { const dueDate = event.currentTarget.value || null; updateTask(task.id, (current) => ({ ...current, dueDate })); }} /><small>Kept as entered, even if the event date changes.</small></label>
-                          <label>Relative offset in calendar days<input aria-label={`Task ${index + 1} relative offset in calendar days`} type="number" min={-3650} max={3650} step={1} value={task.relativeOffsetDays ?? ""} onInput={(event) => { const value = event.currentTarget.value; updateTask(task.id, (current) => ({ ...current, relativeOffsetDays: value === "" ? null : Number(value) })); }} /><small>{taskDates.relativeDate ? `Target ${taskDates.relativeDate} from ${task.sessionId ? "function" : "event"} date ${taskDates.anchorDate}.` : `Negative is before; positive is after. Anchored to the ${task.sessionId ? "assigned function" : "event"} date.`}</small></label>
-                          <label>Session / function<select aria-label={`Task ${index + 1} session`} value={task.sessionId ?? ""} onChange={(event) => updateTask(task.id, (current) => ({ ...current, sessionId: event.target.value || null }))}><option value="">Shared / whole event</option>{submittedBrief.sessions.map((session) => <option value={session.id} key={session.id}>{session.name}</option>)}</select></label>
-                        </div>
-                        <fieldset className="task-dependency-edit">
-                          <legend>Depends on</legend>
-                          {activePlan.tasks.filter((candidate) => candidate.id !== task.id).map((candidate) => {
-                            const checked = task.dependencyIds.includes(candidate.id);
-                            const maySelect = checked || (
-                              canAddTaskDependency(activePlan.tasks, task.id, candidate.id)
-                              && (task.status !== "done" || candidate.status === "done")
-                            );
-                            return (
-                              <label key={candidate.id} title={!maySelect && task.status === "done" ? "Mark this task incomplete before adding an unfinished prerequisite." : undefined}>
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  disabled={!maySelect}
-                                  onChange={(event) => updateTask(task.id, (current) => ({
-                                    ...current,
-                                    dependencyIds: event.target.checked
-                                      ? [...current.dependencyIds, candidate.id]
-                                      : current.dependencyIds.filter((dependencyId) => dependencyId !== candidate.id),
-                                  }))}
-                                />
-                                <span>{candidate.title}{candidate.status === "done" ? " · done" : ""}</span>
-                              </label>
-                            );
-                          })}
-                          <small>Complete prerequisites before this task. Choices that create a cycle or add an unfinished prerequisite to a completed task are unavailable.</small>
-                        </fieldset>
-                      </> : <>
-                        <strong>{task.title}</strong>
-                        <span><CalendarDays size={13} />{taskDates.dueDate || task.timing} · {task.ownerLabel} · {sessionScopeLabel(brief.sessions, task.sessionId)}</span>
-                        {task.relativeOffsetDays !== null && <small className="task-date-note">Relative target: {taskDates.relativeDate ?? "waiting for its anchor date"}{taskDates.fixedDate ? ` · fixed date stays ${taskDates.fixedDate}` : " · no fixed date"}</small>}
-                        {dependencyTasks.length > 0 && <span className="task-dependency-summary">Depends on: {dependencyTasks.map((dependency) => dependency.title).join(", ")}</span>}
-                      </>}
-                      {blocked && <span className="task-blocked">Waiting on: {unmetDependencyTasks.map((dependency) => dependency.title).join(", ")}</span>}
-                      {completedBeforePrerequisites && <span className="task-blocked">Marked complete before prerequisites: {unmetDependencyTasks.map((dependency) => dependency.title).join(", ")}</span>}
-                      {cannotReopen && <span className="task-blocked">Mark incomplete first: {completedDependents.map((dependent) => dependent.title).join(", ")}</span>}
-                      {scheduleConflicts.get(task.id)?.map((conflict) => <span className="task-schedule-warning" key={conflict}>Schedule check: {conflict}</span>)}
-                    </div>
-                    <span className={`priority priority-${task.priority}`}>{task.priority}</span>
-                  </div>
-                );
-              })}
-            </div>
-
+            <TaskTimelineSection
+              tasks={activePlan.tasks}
+              eventDate={brief.eventDate}
+              sessions={brief.sessions}
+              sessionOptions={submittedBrief.sessions}
+              editing={editing}
+              scheduleConflicts={scheduleConflicts}
+              onUpdateTask={updateTask}
+            />
             <section className="costs-section" aria-labelledby="cost-heading"><div className="section-heading compact-heading"><div><span className="section-label">KNOWN, QUOTED &amp; STILL TO CHECK</span><h3 id="cost-heading">Cost register</h3></div><span className="soft-icon"><CircleCheck size={16} /></span></div>
               {budgetHealth ? <div className={`budget-health health-${budgetHealth.state}`}><div><strong>{budgetHealth.state === "within_cap" ? "Recorded costs plus reserve fit the cap" : budgetHealth.state === "over_cap" ? "Recorded costs plus reserve exceed the cap" : budgetHealth.state === "range_crosses_cap" ? "Cost range crosses the cap" : activePlan.budget.reviewComplete ? "Review mandatory costs and fees" : "Budget review is still open"}</strong><small>{budgetHealth.unresolvedCount} unpriced · {budgetHealth.unresolvedMandatoryCount} mandatory and unpriced · {budgetHealth.unresolvedMandatoryChargeCount} mandatory fee/tax reviews unresolved</small></div><div className="health-number">{moneyRange(budgetHealth.forecastWithReserveMinor, budgetHealth.forecastWithReserveMaxMinor, currency)}<small>forecast including reserve</small></div></div> : <div className="budget-health health-unknown"><strong>Fix invalid plan fields to recalculate the budget.</strong></div>}
               {budgetHealth && budgetHealth.state === "over_cap" && <div className="form-error" role="alert"><CircleAlert size={16} /><span>This recorded forecast is above the cap. Reduce costs or revise the cap before treating the plan as feasible.</span></div>}
@@ -1205,7 +1065,8 @@ export default function PlannerWorkspace({ initialEventType }: { initialEventTyp
             </section>
 
             <div className="lower-grid"><section className="ideas-section"><div className="section-heading compact-heading"><div><span className="section-label">PERSONAL TOUCHES</span><h3>Ideas that fit</h3></div><span className="soft-icon"><Sparkles size={16} /></span></div><div className="ideas-list">{proposal.ideas.map((idea, index) => <article className="idea-item" key={`${index}-${idea.title}`}><span className={`idea-number idea-number-${index % 3}`}>0{index + 1}</span><div><strong>{idea.title}</strong><p>{idea.whyItFits}</p><small>{idea.costNote}</small></div></article>)}</div></section>
-              <section className="vendors-section"><div className="section-heading compact-heading"><div><span className="section-label">ASK BEFORE YOU BOOK</span><h3>Vendor checklist</h3></div><span className="soft-icon"><Store size={16} /></span></div><div className="vendor-list">{activePlan.vendors.map((vendor) => <details className="vendor-accordion" key={vendor.id}><summary><span>{vendor.category}{vendor.name ? ` · ${vendor.name}` : ""}</span><ChevronDown size={15} /></summary><div className="vendor-detail"><ul>{vendor.questions.map((question, questionIndex) => <li key={questionIndex}>{question}</li>)}</ul>{editing ? <div className="vendor-edit-grid"><label>Vendor name<input value={vendor.name ?? ""} maxLength={80} onChange={(event) => updateVendor(vendor.id, (current) => ({ ...current, name: event.target.value || null }))} /></label><label>Availability<select value={vendor.availability} onChange={(event) => updateVendor(vendor.id, (current) => ({ ...current, availability: event.target.value as VendorRecord["availability"], checkedAt: new Date().toISOString() }))}><option value="unknown">Unknown</option><option value="inquiry_pending">Inquiry sent</option><option value="confirmed">Confirmed</option><option value="expired">Expired</option></select></label><label>Booking<select value={vendor.booking} onChange={(event) => updateVendor(vendor.id, (current) => ({ ...current, booking: event.target.value as VendorRecord["booking"] }))}><option value="not_booked">Not booked</option><option value="host_recorded">Host says booked</option><option value="cancelled">Cancelled</option></select></label><label>Notes<textarea value={vendor.notes} maxLength={500} onChange={(event) => updateVendor(vendor.id, (current) => ({ ...current, notes: event.target.value }))} /></label></div> : <div className="vendor-status"><span>Availability: {vendor.availability.replaceAll("_", " ")}</span><span>Booking: {vendor.booking.replaceAll("_", " ")}</span>{vendor.notes && <p>{vendor.notes}</p>}</div>}</div></details>)}</div><p className="vendor-caveat">Checklist categories are ideas to explore. No vendors or availability are confirmed until you record them.</p></section></div>
+              <VendorChecklistSection vendors={activePlan.vendors} editing={editing} onUpdateVendor={updateVendor} />
+            </div>
             <div className="questions-box"><div><span className="section-label">KEEP THESE VISIBLE</span><h3>Open questions &amp; assumptions</h3></div><div className="question-columns"><div><strong>Worth deciding</strong><ul>{proposal.openQuestions.map((item, index) => <li key={index}>{item}</li>)}</ul></div><div><strong>Currently assumed</strong><ul>{proposal.assumptions.map((item, index) => <li key={index}>{item}</li>)}</ul></div></div></div>
             <div className="plan-footer"><span><CircleAlert size={15} /> You stay in charge of costs, bookings, and final decisions.</span><span>Made for thoughtful hosts.</span></div>
           </section>

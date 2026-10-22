@@ -88,6 +88,35 @@ function jsonResponse(body: unknown, status = 200, headers: HeadersInit = {}): R
   });
 }
 
+function providerFailure(error: unknown): { status: number; code: string; message: string } {
+  const status = typeof error === "object" && error !== null && "status" in error
+    ? error.status
+    : undefined;
+  const errorName = error instanceof Error
+    ? error.name === "Error" ? error.constructor.name : error.name
+    : "";
+
+  if (status === 429 || errorName === "RateLimitError") {
+    return {
+      status: 503,
+      code: "PROVIDER_RATE_LIMITED",
+      message: "The planning service is temporarily busy. Please try again later.",
+    };
+  }
+  if (errorName === "APIConnectionTimeoutError" || errorName === "TimeoutError" || errorName === "AbortError") {
+    return {
+      status: 504,
+      code: "PROVIDER_TIMEOUT",
+      message: "The planning service took too long to respond. Your brief is unchanged; please try again.",
+    };
+  }
+  return {
+    status: 502,
+    code: "PROVIDER_FAILED",
+    message: "The planning service could not create a draft. Your brief is unchanged; please try again.",
+  };
+}
+
 export function createGenerationEndpoint(options: {
   hasProviderKey: () => boolean;
   generate: (input: unknown) => Promise<PlannerProposal>;
@@ -109,8 +138,6 @@ export function createGenerationEndpoint(options: {
       }
 
       const { brief } = parsed.data;
-      const revisionRequest = "revisionRequest" in parsed.data ? parsed.data.revisionRequest : undefined;
-
       let totalMinor: number;
       try {
         totalMinor = parseBudgetMinor(brief.budgetAmount, brief.currency);
@@ -133,7 +160,10 @@ export function createGenerationEndpoint(options: {
         );
       }
 
-      const proposal = await options.generate(revisionRequest ? { brief, revisionRequest } : brief);
+      // The generator accepts a raw brief for first drafts and the validated wrapper for revisions.
+      // Preserve the full wrapper in revision calls so accepted host constraints reach the model.
+      const providerInput = "revisionRequest" in parsed.data ? parsed.data : brief;
+      const proposal = await options.generate(providerInput);
       const result = buildPlanResult(proposal, brief.currency, totalMinor);
       return jsonResponse({ result });
     } catch (error) {
@@ -147,10 +177,8 @@ export function createGenerationEndpoint(options: {
         );
       }
 
-      return jsonResponse(
-        { error: { message: "The planning service could not create a draft. Your brief is unchanged; please try again." } },
-        502,
-      );
+      const failure = providerFailure(error);
+      return jsonResponse({ error: { code: failure.code, message: failure.message } }, failure.status);
     }
   };
 }
