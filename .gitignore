@@ -15,6 +15,8 @@
 
 # next.js
 /.next/
+/frontend/.next/
+/frontend/out/
 /out/
 
 # production
@@ -47,3 +49,4 @@ next-env.d.ts
 .wrangler/
 # Local development variables and secrets
 .dev.vars*
+.codex-backups/

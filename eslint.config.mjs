@@ -5,10 +5,16 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  {
+    settings: {
+      next: { rootDir: "frontend/" },
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    "frontend/.next/**",
     "out/**",
     "build/**",
     "dist/**",
@@ -16,6 +22,7 @@ const eslintConfig = defineConfig([
     ".cloudflare/**",
     ".wrangler/**",
     "next-env.d.ts",
+    "frontend/next-env.d.ts",
   ]),
 ]);
 

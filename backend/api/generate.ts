@@ -1,8 +1,8 @@
-import { generateProposal } from "@/lib/groq";
+import { generateProposal } from "../lib/groq.ts";
 import {
   createGenerationEndpoint,
   createInMemoryGenerationLimiter,
-} from "@/lib/generation-endpoint";
+} from "../lib/generation-endpoint.ts";
 
 export const maxDuration = 30;
 

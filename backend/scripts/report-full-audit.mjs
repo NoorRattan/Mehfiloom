@@ -37,7 +37,7 @@ if (result.status === 0 && Object.keys(report.vulnerabilities ?? {}).length === 
 }
 
 const vulnerabilities = Object.entries(report.vulnerabilities ?? {});
-const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+const packageJson = JSON.parse(await readFile(new URL("../../package.json", import.meta.url), "utf8"));
 const declaredProductionDependencies = new Set(Object.keys(packageJson.dependencies ?? {}));
 const unexpectedPackages = vulnerabilities
   .map(([name]) => name)

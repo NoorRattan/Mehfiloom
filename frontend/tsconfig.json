@@ -14,12 +14,15 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,
+    "baseUrl": ".",
     "plugins": [
       {
         "name": "next"
       }
     ],
     "paths": {
+      "@/lib/planner": ["../backend/lib/planner.ts"],
+      "@/lib/*": ["./lib/*"],
       "@/*": ["./*"]
     }
   },
@@ -29,7 +32,8 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
-    "**/*.mts"
+    "**/*.mts",
+    "../backend/**/*.ts"
   ],
   "exclude": ["node_modules"]
 }
