@@ -41,11 +41,18 @@ At the October 23, 2026 local review:
 - Reachable Git history screening inspected 222 unique text blobs across 29 pre-readiness commits with no supported credential patterns detected. CI reruns the screen after subsequent commits; this is a heuristic screen, not a guarantee.
 - An independent static security review identified an unbounded time-zone formatter cache before request throttling. The implementation now normalizes cache keys, retains at most 64 entries, and rejects throttled requests before parsing. Four new backend regressions cover case variants, eviction, early rejection and malformed-attempt admission. Supporting-file coverage in that review was partial; it is not an exhaustive security certification.
 
-Use the latest CI/deployment results for the submitted revision. Local pass results alone do not prove a later deployment succeeded.
+Hosted verification of application revision [`bb4f538`](https://github.com/NoorRattan/Mehfiloom/commit/bb4f5388cc435585bb3c22a7f484c6936c875e2b):
+
+- [GitHub CI passed](https://github.com/NoorRattan/Mehfiloom/actions/runs/39966684625).
+- [Vercel production deployment](https://vercel.com/noorrattans-projects/mehfiloom/DZzYvyCDwMkx6cQ47MuABB6Lwus4) reached Ready in 41 seconds. Searching its complete 70-line build log for `warn` returned no results.
+- All ten public experience URLs returned HTTP 200 with `X-Frame-Options: DENY` and `X-Content-Type-Options: nosniff`.
+- A real production Groq request returned HTTP 200 with `Cache-Control: no-store`, nine timeline tasks, five vendor groups and four ideas. Its INR 100,000 budget reconciled: total, allocated amount and category sum were each 10,000,000 minor units.
+
+Use the latest CI/deployment results for later application revisions; these observations are tied to the revision above.
 
 ## Vercel warning remediation
 
-The earlier deployment had three warning groups: obsolete `cache-dir` npm configuration (repeated at install/build), ESLint 9 deprecation, and an unreviewed resolver postinstall script. The repository now removes only the obsolete environment variable before Vercel npm commands, uses ESLint 10 with the Next.js-supported peer overrides, and explicitly approves only reviewed `unrs-resolver@1.12.2`. The new deployment log must confirm the resulting warning count.
+The earlier deployment had three warning groups: obsolete `cache-dir` npm configuration (repeated at install/build), ESLint 9 deprecation, and an unreviewed resolver postinstall script. The repository now removes only the obsolete environment variable before Vercel npm commands, uses ESLint 10 with the Next.js-supported peer overrides, and explicitly approves only reviewed `unrs-resolver@1.12.2`. All three warning groups were absent in the verified production build above. The remaining two Deployment Settings recommendations are platform suggestions, not build warnings.
 
 The separate development dependency advisory remains disclosed in `SECURITY.md`; no warning suppression or incompatible force-downgrade is used to hide it.
 
