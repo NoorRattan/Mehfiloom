@@ -8,7 +8,7 @@ import { money, type EventKind } from "@/lib/events";
 export function BudgetView({ result }: { result: PlanResult }) {
   return (
     <div className="budget-view">
-      <div className="allocation-bar" aria-label="Budget allocation">
+      <div className="allocation-bar" aria-hidden="true">
         {result.lines.map((line, index) => (
           <span
             key={line.category}
@@ -20,15 +20,19 @@ export function BudgetView({ result }: { result: PlanResult }) {
           />
         ))}
       </div>
-      <div className="budget-table">
-        <div className="budget-table-head">
-          <span>THE DETAILS</span>
-          <span>SHARE</span>
-          <span>PLANNED AMOUNT</span>
+      <div
+        className="budget-table"
+        role="table"
+        aria-label="Budget allocations"
+      >
+        <div className="budget-table-head" role="row">
+          <span role="columnheader">THE DETAILS</span>
+          <span role="columnheader">SHARE</span>
+          <span role="columnheader">PLANNED AMOUNT</span>
         </div>
         {result.lines.map((line, index) => (
-          <div className="budget-row" key={line.category}>
-            <div>
+          <div className="budget-row" key={line.category} role="row">
+            <div role="cell">
               <span
                 className="budget-dot"
                 style={{ background: `var(--chart-${index % 8})` }}
@@ -38,15 +42,21 @@ export function BudgetView({ result }: { result: PlanResult }) {
                 <p>{line.rationale}</p>
               </div>
             </div>
-            <span>
+            <span role="cell">
               {Math.round((line.amountMinor / result.totalMinor) * 100)}%
             </span>
-            <strong>{money(line.amountMinor, result.currency)}</strong>
+            <strong role="cell">
+              {money(line.amountMinor, result.currency)}
+            </strong>
           </div>
         ))}
-        <div className="budget-table-total">
-          <strong>Total planning budget</strong>
-          <strong>{money(result.totalMinor, result.currency)}</strong>
+        <div className="budget-table-total" role="row">
+          <strong role="cell" aria-colspan={2}>
+            Total planning budget
+          </strong>
+          <strong role="cell">
+            {money(result.totalMinor, result.currency)}
+          </strong>
         </div>
       </div>
       <p className="small-note">

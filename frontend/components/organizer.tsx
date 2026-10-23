@@ -329,7 +329,14 @@ export default function Organizer({ kind }: { kind: EventKind }) {
                 </div>
                 <span className="completion-label">{completion}% together</span>
               </div>
-              <div className="completion-track">
+              <div
+                className="completion-track"
+                role="progressbar"
+                aria-label="Checklist completion"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={completion}
+              >
                 <span style={{ width: `${completion}%` }} />
               </div>
               <div className="task-list">

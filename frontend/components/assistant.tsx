@@ -276,6 +276,26 @@ export default function Assistant({ kind }: { kind: EventKind }) {
               <p>{error}</p>
             </div>
           )}
+          {state.revisionRequests.length >= 20 && !busy && (
+            <button
+              className="button button-outline"
+              onClick={() => {
+                update((current) => ({
+                  ...current,
+                  result: null,
+                  resultSource: null,
+                  revisionRequests: [],
+                }));
+                setPrompt("");
+                setError("");
+                setStatus(
+                  "Ready for a fresh planning round. Your event details, tasks and vendor notes are kept.",
+                );
+              }}
+            >
+              Start a fresh planning round
+            </button>
+          )}
           {status && (
             <p className="success-message" role="status">
               <Check size={16} />

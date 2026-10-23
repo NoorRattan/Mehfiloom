@@ -6,7 +6,7 @@
 :root {
   --paper: #f4f0e8;
   --ink: #292b25;
-  --muted: #76766b;
+  --muted: #626358;
   --accent: #ba5135;
   --line: #dad6cb;
   --soft: #eae5d9;
@@ -1000,7 +1000,7 @@ fieldset {
   --paper: #f3ede5;
   --ink: #512c36;
   --accent: #8f4b5c;
-  --muted: #8a7576;
+  --muted: #71595f;
   --line: #dfd1cd;
   --soft: #e9deda;
 }
@@ -1008,7 +1008,7 @@ fieldset {
   --paper: #e1d9f0;
   --ink: #342841;
   --accent: #644b83;
-  --muted: #786a86;
+  --muted: #62546f;
   --line: #c9bdd8;
   --soft: #d6cbe9;
   --chart-0: #644b83;
@@ -1020,7 +1020,7 @@ fieldset {
   --paper: #e9e9db;
   --ink: #324d3b;
   --accent: #4d6b49;
-  --muted: #788272;
+  --muted: #5c6855;
   --line: #cbd0bd;
   --soft: #dce0ce;
   --chart-0: #3e5c42;
@@ -4843,5 +4843,115 @@ fieldset {
   }
   .workspace-tabs button {
     font-size: 10px;
+  }
+}
+
+/* Planning controls remain readable at every breakpoint, including zoom. */
+.workspace-main .field > span,
+.workspace-main .assistant-context .field > span,
+.workspace-main .budget-edit-row {
+  font-size: 13px;
+}
+.workspace-main .field small,
+.workspace-main .save-note,
+.workspace-main .assistant-disclosure,
+.workspace-main .workspace-bottom-note,
+.workspace-main .small-note,
+.workspace-main .budget-row p,
+.workspace-main .task-row > span > small,
+.workspace-main .panel-description {
+  font-size: 12px;
+  line-height: 1.65;
+}
+.workspace-main .field input,
+.workspace-main .field select,
+.workspace-main .field textarea,
+.workspace-main .compact-fields .field input,
+.workspace-main .compact-fields .field select,
+.workspace-main .compact-fields .field textarea,
+.workspace-main .budget-edit-row input,
+.workspace-main .assistant-composer > textarea,
+.workspace-main .add-task input {
+  font-size: 16px;
+  min-height: 44px;
+  border-color: color-mix(in srgb, var(--ink) 55%, var(--paper));
+}
+.workspace-main .field input::placeholder,
+.workspace-main .field textarea::placeholder {
+  opacity: 1;
+}
+.workspace-main .money-field select {
+  font-size: 13px !important;
+  width: 85px;
+}
+.workspace-main .mood-chips button,
+.workspace-main .prompt-suggestions > button {
+  font-size: 12px;
+  min-height: 44px;
+  padding: 9px 12px;
+}
+.workspace-main .workspace-tabs button,
+.workspace-main .text-link,
+.workspace-main .button,
+.workspace-main .vendor-details summary,
+.workspace-main .task-row > span > strong {
+  font-size: 13px;
+  line-height: 1.5;
+}
+.workspace-main .workspace-tabs button,
+.workspace-main .text-link,
+.workspace-main .icon-button,
+.workspace-main .send-button,
+.workspace-main .success-message button,
+.workspace-main .button {
+  min-height: 44px;
+}
+.workspace-main .icon-button,
+.workspace-main .send-button,
+.workspace-main .success-message button {
+  min-width: 44px;
+}
+.workspace-main .workspace-stats > div > span,
+.workspace-main .eyebrow,
+.workspace-main .budget-table-head,
+.workspace-main .panel-title > span,
+.workspace-main .budget-row > span {
+  font-size: 11px;
+  line-height: 1.6;
+}
+.workspace-main .completion-label {
+  font-size: 11px !important;
+}
+.workspace-main .budget-row strong,
+.workspace-main .vendor-details li,
+.workspace-main .result-timeline p,
+.workspace-main .result-ideas p,
+.workspace-main .result-open-notes li {
+  font-size: 13px;
+  line-height: 1.65;
+}
+.workspace-main .workspace-tabs {
+  gap: clamp(12px, 2vw, 29px);
+  overflow-x: auto;
+}
+.workspace-main .workspace-tabs button {
+  flex-shrink: 0;
+}
+.workspace-main .workspace-stats strong {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 760px) {
+  .workspace-main .budget-table-head,
+  .workspace-main .budget-row {
+    grid-template-columns: minmax(0, 1fr) 34px 86px;
+    gap: 10px;
+  }
+  .workspace-main .budget-table-head {
+    font-size: 10px;
+  }
+  .workspace-main .budget-row > strong {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }

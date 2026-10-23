@@ -19,16 +19,19 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - name: Restore Next.js build cache
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: frontend/.next/cache
           key: ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-${{ hashFiles('**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx', '**/*.css') }}
@@ -38,6 +41,9 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
+      - name: Screen reachable history for credentials
+        run: npm run check:secrets
+
       - name: Run unit and integration tests
         run: npm test
 
@@ -45,7 +51,7 @@ jobs:
         run: npm run lint
 
       - name: Type-check
-        run: npx tsc --project frontend/tsconfig.json --noEmit --incremental false
+        run: npm run typecheck
 
       - name: Build production app
         run: npm run build

@@ -30,8 +30,15 @@ export function createInMemoryGenerationLimiter(
   return function takeGenerationSlot(request: Request): boolean {
     // These headers are safe to use only when the hosting proxy overwrites them.
     // This per-process limit is a backstop for local/single-instance runs, not a deployment quota.
-    const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-    const clientKey = (forwarded || request.headers.get("x-real-ip") || "local").slice(0, 64);
+    const forwarded = request.headers
+      .get("x-forwarded-for")
+      ?.split(",")[0]
+      ?.trim();
+    const clientKey = (
+      forwarded ||
+      request.headers.get("x-real-ip") ||
+      "local"
+    ).slice(0, 64);
     const currentTime = now();
     const current = callsByClient.get(clientKey);
 
@@ -43,7 +50,10 @@ export function createInMemoryGenerationLimiter(
     }
 
     if (!current || current.resetAt <= currentTime) {
-      callsByClient.set(clientKey, { count: 1, resetAt: currentTime + WINDOW_MS });
+      callsByClient.set(clientKey, {
+        count: 1,
+        resetAt: currentTime + WINDOW_MS,
+      });
       return true;
     }
     if (current.count >= MAX_CALLS_PER_WINDOW) return false;
@@ -55,9 +65,16 @@ export function createInMemoryGenerationLimiter(
 async function readJsonBody(request: Request): Promise<unknown> {
   const declaredLength = Number(request.headers.get("content-length"));
   if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
-    throw new RequestProblem("The event brief is too large. Shorten the notes and try again.", 413);
+    throw new RequestProblem(
+      "The event brief is too large. Shorten the notes and try again.",
+      413,
+    );
   }
-  if (!request.body) throw new RequestProblem("Add an event brief before generating a plan.", 400);
+  if (!request.body)
+    throw new RequestProblem(
+      "Add an event brief before generating a plan.",
+      400,
+    );
 
   const reader = request.body.getReader();
   const decoder = new TextDecoder();
@@ -69,7 +86,10 @@ async function readJsonBody(request: Request): Promise<unknown> {
     byteCount += value.byteLength;
     if (byteCount > MAX_BODY_BYTES) {
       await reader.cancel();
-      throw new RequestProblem("The event brief is too large. Shorten the notes and try again.", 413);
+      throw new RequestProblem(
+        "The event brief is too large. Shorten the notes and try again.",
+        413,
+      );
     }
     text += decoder.decode(value, { stream: true });
   }
@@ -77,43 +97,68 @@ async function readJsonBody(request: Request): Promise<unknown> {
   try {
     return JSON.parse(text) as unknown;
   } catch {
-    throw new RequestProblem("The event brief could not be read. Please try again.", 400);
+    throw new RequestProblem(
+      "The event brief could not be read. Please try again.",
+      400,
+    );
   }
 }
 
-function jsonResponse(body: unknown, status = 200, headers: HeadersInit = {}): Response {
+function jsonResponse(
+  body: unknown,
+  status = 200,
+  headers: HeadersInit = {},
+): Response {
   return Response.json(body, {
     status,
-    headers: { "Cache-Control": "no-store", ...Object.fromEntries(new Headers(headers)) },
+    headers: {
+      "Cache-Control": "no-store",
+      ...Object.fromEntries(new Headers(headers)),
+    },
   });
 }
 
-function providerFailure(error: unknown): { status: number; code: string; message: string } {
-  const status = typeof error === "object" && error !== null && "status" in error
-    ? error.status
-    : undefined;
-  const errorName = error instanceof Error
-    ? error.name === "Error" ? error.constructor.name : error.name
-    : "";
+function providerFailure(error: unknown): {
+  status: number;
+  code: string;
+  message: string;
+} {
+  const status =
+    typeof error === "object" && error !== null && "status" in error
+      ? error.status
+      : undefined;
+  const errorName =
+    error instanceof Error
+      ? error.name === "Error"
+        ? error.constructor.name
+        : error.name
+      : "";
 
   if (status === 429 || errorName === "RateLimitError") {
     return {
       status: 503,
       code: "PROVIDER_RATE_LIMITED",
-      message: "The planning service is temporarily busy. Please try again later.",
+      message:
+        "The planning service is temporarily busy. Please try again later.",
     };
   }
-  if (errorName === "APIConnectionTimeoutError" || errorName === "TimeoutError" || errorName === "AbortError") {
+  if (
+    errorName === "APIConnectionTimeoutError" ||
+    errorName === "TimeoutError" ||
+    errorName === "AbortError"
+  ) {
     return {
       status: 504,
       code: "PROVIDER_TIMEOUT",
-      message: "The planning service took too long to respond. Your brief is unchanged; please try again.",
+      message:
+        "The planning service took too long to respond. Your brief is unchanged; please try again.",
     };
   }
   return {
     status: 502,
     code: "PROVIDER_FAILED",
-    message: "The planning service could not create a draft. Your brief is unchanged; please try again.",
+    message:
+      "The planning service could not create a draft. Your brief is unchanged; please try again.",
   };
 }
 
@@ -122,17 +167,44 @@ export function createGenerationEndpoint(options: {
   generate: (input: unknown) => Promise<PlannerProposal>;
   allowRequest: GenerationLimiter;
 }) {
-  return async function handleGenerationRequest(request: Request): Promise<Response> {
+  return async function handleGenerationRequest(
+    request: Request,
+  ): Promise<Response> {
     try {
-      const contentType = request.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
+      const contentType = request.headers
+        .get("content-type")
+        ?.split(";", 1)[0]
+        .trim()
+        .toLowerCase();
       if (request.body && contentType !== "application/json") {
         throw new RequestProblem("Send the event brief as JSON.", 415);
+      }
+      // Admission precedes body parsing and expensive date/time refinements.
+      // Malformed JSON attempts also consume this bounded ingress allowance.
+      if (!options.allowRequest(request)) {
+        return jsonResponse(
+          {
+            error: {
+              code: "RATE_LIMITED",
+              message:
+                "This app instance has reached its short-term request limit. Please try again later.",
+            },
+          },
+          429,
+          { "Retry-After": String(WINDOW_MS / 1000) },
+        );
       }
       const input = await readJsonBody(request);
       const parsed = generationRequestSchema.safeParse(input);
       if (!parsed.success) {
         return jsonResponse(
-          { error: { message: parsed.error.issues[0]?.message ?? "Check the event brief and try again." } },
+          {
+            error: {
+              message:
+                parsed.error.issues[0]?.message ??
+                "Check the event brief and try again.",
+            },
+          },
           400,
         );
       }
@@ -142,49 +214,71 @@ export function createGenerationEndpoint(options: {
       try {
         totalMinor = parseBudgetMinor(brief.budgetAmount, brief.currency);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Check the budget amount and currency.";
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Check the budget amount and currency.";
         return jsonResponse({ error: { message } }, 400);
       }
 
       if (!options.hasProviderKey()) {
         return jsonResponse(
-          { error: { code: "PROVIDER_NOT_CONFIGURED", message: "AI planning is not connected yet. Add a Groq API key to the server environment to generate a live plan." } },
+          {
+            error: {
+              code: "PROVIDER_NOT_CONFIGURED",
+              message:
+                "AI planning is not connected yet. Add a Groq API key to the server environment to generate a live plan.",
+            },
+          },
           503,
-        );
-      }
-      if (!options.allowRequest(request)) {
-        return jsonResponse(
-          { error: { code: "RATE_LIMITED", message: "This app instance has reached its short-term generation limit. Please try again later." } },
-          429,
-          { "Retry-After": String(WINDOW_MS / 1000) },
         );
       }
 
       // The generator accepts a raw brief for first drafts and the validated wrapper for revisions.
       // Preserve the full wrapper in revision calls so accepted host constraints reach the model.
-      const providerInput = "revisionRequest" in parsed.data ? parsed.data : brief;
+      const providerInput =
+        "revisionRequest" in parsed.data ? parsed.data : brief;
       const proposal = await options.generate(providerInput);
       const result = buildPlanResult(proposal, brief.currency, totalMinor);
       return jsonResponse({ result });
     } catch (error) {
       if (error instanceof RequestProblem) {
-        return jsonResponse({ error: { message: error.message } }, error.status);
+        return jsonResponse(
+          { error: { message: error.message } },
+          error.status,
+        );
       }
       if (error instanceof ZodError) {
         return jsonResponse(
-          { error: { message: "The planning service returned a draft that did not meet the required structure. Your brief is unchanged; try again." } },
+          {
+            error: {
+              message:
+                "The planning service returned a draft that did not meet the required structure. Your brief is unchanged; try again.",
+            },
+          },
           502,
         );
       }
 
       const failure = providerFailure(error);
-      const providerStatus = typeof error === "object" && error !== null && "status" in error && typeof error.status === "number" ? error.status : undefined;
+      const providerStatus =
+        typeof error === "object" &&
+        error !== null &&
+        "status" in error &&
+        typeof error.status === "number"
+          ? error.status
+          : undefined;
       console.error("Planning provider request failed", {
         name: error instanceof Error ? error.name : "UnknownError",
         providerStatus,
-        incompleteResponse: error instanceof Error && error.message === "INCOMPLETE_MODEL_RESPONSE",
+        incompleteResponse:
+          error instanceof Error &&
+          error.message === "INCOMPLETE_MODEL_RESPONSE",
       });
-      return jsonResponse({ error: { code: failure.code, message: failure.message } }, failure.status);
+      return jsonResponse(
+        { error: { code: failure.code, message: failure.message } },
+        failure.status,
+      );
     }
   };
 }

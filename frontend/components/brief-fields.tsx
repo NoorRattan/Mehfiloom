@@ -117,6 +117,7 @@ export default function BriefFields({
             key={style}
             type="button"
             className={brief.style === style ? "chosen" : ""}
+            aria-pressed={brief.style === style}
             onClick={() => onChange("style", style)}
           >
             {style}

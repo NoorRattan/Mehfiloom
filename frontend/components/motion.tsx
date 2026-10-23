@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type ReactNode } from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion, MotionConfig, useReducedMotion } from "framer-motion";
 import { usePathname } from "next/navigation";
 import Lenis from "lenis";
 import gsap from "gsap";
@@ -46,14 +46,16 @@ export function MotionProvider({ children }: { children: ReactNode }) {
     return () => lenis.destroy();
   }, []);
   return (
-    <motion.div
-      key={pathname}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.3 }}
-    >
-      {children}
-    </motion.div>
+    <MotionConfig reducedMotion="user">
+      <motion.div
+        key={pathname}
+        initial={false}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.3 }}
+      >
+        {children}
+      </motion.div>
+    </MotionConfig>
   );
 }
 

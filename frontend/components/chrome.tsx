@@ -58,6 +58,9 @@ export function Header({ kind }: { kind?: EventKind }) {
         ) {
           event.preventDefault();
           links[links.length - 1].focus();
+        } else if (event.shiftKey && document.activeElement === links[0]) {
+          event.preventDefault();
+          toggleRef.current?.focus();
         }
       }
     };

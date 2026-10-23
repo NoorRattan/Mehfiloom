@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createGenerationEndpoint, createInMemoryGenerationLimiter } from "../lib/generation-endpoint.ts";
-import { EXAMPLE_BRIEF, EXAMPLE_PROPOSAL, generationRequestSchema } from "../lib/planner.ts";
+import {
+  createGenerationEndpoint,
+  createInMemoryGenerationLimiter,
+} from "../lib/generation-endpoint.ts";
+import {
+  EXAMPLE_BRIEF,
+  EXAMPLE_PROPOSAL,
+  generationRequestSchema,
+} from "../lib/planner.ts";
 
 const endpointUrl = "http://localhost/api/generate";
 
@@ -41,11 +48,13 @@ test("generation endpoint returns a no-store plan without exposing implementatio
 
 test("ordinary generation forwards a validated brief in the provider-supported shape", async () => {
   let received;
-  const { handle } = makeEndpoint({ generate: async (input) => {
-    received = input;
-    generationRequestSchema.parse(input);
-    return EXAMPLE_PROPOSAL;
-  } });
+  const { handle } = makeEndpoint({
+    generate: async (input) => {
+      received = input;
+      generationRequestSchema.parse(input);
+      return EXAMPLE_PROPOSAL;
+    },
+  });
   const response = await handle(request(EXAMPLE_BRIEF));
 
   assert.equal(response.status, 200);
@@ -59,12 +68,16 @@ test("revision endpoint forwards accepted revision history intact to the generat
     "Avoid activities that require guests to stand for a long time.",
   ];
   const revisionRequest = "Keep the quiet option and update the welcome plan.";
-  const { handle: validatingHandle } = makeEndpoint({ generate: async (input) => {
-    received = input;
-    generationRequestSchema.parse(input);
-    return EXAMPLE_PROPOSAL;
-  } });
-  const response = await validatingHandle(request({ brief: EXAMPLE_BRIEF, priorRevisionRequests, revisionRequest }));
+  const { handle: validatingHandle } = makeEndpoint({
+    generate: async (input) => {
+      received = input;
+      generationRequestSchema.parse(input);
+      return EXAMPLE_PROPOSAL;
+    },
+  });
+  const response = await validatingHandle(
+    request({ brief: EXAMPLE_BRIEF, priorRevisionRequests, revisionRequest }),
+  );
 
   assert.equal(response.status, 200);
   assert.deepEqual(received.priorRevisionRequests, priorRevisionRequests);
@@ -90,9 +103,14 @@ test("invalid JSON, absent body, and invalid briefs fail before a provider call"
 test("non-JSON request bodies are rejected before rate limiting or provider calls", async () => {
   let slotChecks = 0;
   const { handle, providerCalls } = makeEndpoint({
-    allowRequest: () => { slotChecks += 1; return true; },
+    allowRequest: () => {
+      slotChecks += 1;
+      return true;
+    },
   });
-  const response = await handle(request(JSON.stringify(EXAMPLE_BRIEF), { "Content-Type": "text/plain" }));
+  const response = await handle(
+    request(JSON.stringify(EXAMPLE_BRIEF), { "Content-Type": "text/plain" }),
+  );
   const payload = await response.json();
 
   assert.equal(response.status, 415);
@@ -104,7 +122,9 @@ test("non-JSON request bodies are rejected before rate limiting or provider call
 
 test("declared and streamed oversize request bodies are rejected", async () => {
   const { handle, providerCalls } = makeEndpoint();
-  const declared = await handle(request("{}", { "Content-Length": String(16 * 1024 + 1) }));
+  const declared = await handle(
+    request("{}", { "Content-Length": String(16 * 1024 + 1) }),
+  );
   const stream = new ReadableStream({
     start(controller) {
       controller.enqueue(new Uint8Array(16 * 1024 + 1));
@@ -127,7 +147,9 @@ test("declared and streamed oversize request bodies are rejected", async () => {
 test("unsupported input is not reflected in an error response", async () => {
   const { handle, providerCalls } = makeEndpoint();
   const hostileValue = "<script>send private data</script>";
-  const response = await handle(request({ ...EXAMPLE_BRIEF, surprise: hostileValue }));
+  const response = await handle(
+    request({ ...EXAMPLE_BRIEF, surprise: hostileValue }),
+  );
   const responseText = await response.text();
 
   assert.equal(response.status, 400);
@@ -136,11 +158,14 @@ test("unsupported input is not reflected in an error response", async () => {
   assert.equal(providerCalls(), 0);
 });
 
-test("missing provider configuration does not consume an AI request slot", async () => {
+test("missing provider configuration still passes through ingress admission", async () => {
   let slotChecks = 0;
   const { handle, providerCalls } = makeEndpoint({
     hasProviderKey: () => false,
-    allowRequest: () => { slotChecks += 1; return true; },
+    allowRequest: () => {
+      slotChecks += 1;
+      return true;
+    },
   });
   const response = await handle(request(EXAMPLE_BRIEF));
   const payload = await response.json();
@@ -148,7 +173,7 @@ test("missing provider configuration does not consume an AI request slot", async
   assert.equal(response.status, 503);
   assert.equal(payload.error.code, "PROVIDER_NOT_CONFIGURED");
   assert.equal(response.headers.get("cache-control"), "no-store");
-  assert.equal(slotChecks, 0);
+  assert.equal(slotChecks, 1);
   assert.equal(providerCalls(), 0);
 });
 
@@ -158,7 +183,9 @@ test("per-client request limit stops at four calls and advertises its reset wind
   const statuses = [];
   let limitedResponse;
   for (let i = 0; i < 5; i += 1) {
-    const response = await handle(request(EXAMPLE_BRIEF, { "x-forwarded-for": "198.51.100.4, 10.0.0.2" }));
+    const response = await handle(
+      request(EXAMPLE_BRIEF, { "x-forwarded-for": "198.51.100.4, 10.0.0.2" }),
+    );
     statuses.push(response.status);
     if (i === 4) limitedResponse = response;
   }
@@ -169,12 +196,49 @@ test("per-client request limit stops at four calls and advertises its reset wind
   assert.equal(providerCalls(), 4);
 });
 
+test("ingress rejection does not read the body or run time-zone validation", async (t) => {
+  const { handle, providerCalls } = makeEndpoint({ allowRequest: () => false });
+  const pending = request({
+    ...EXAMPLE_BRIEF,
+    eventDate: "2027-01-01",
+    eventTime: "12:00",
+    timeZone: "Europe/Paris",
+  });
+  const reader = t.mock.method(pending.body, "getReader", () => {
+    throw new Error("Body must not be consumed after ingress rejection");
+  });
+  const formatter = t.mock.method(Intl, "DateTimeFormat", () => {
+    throw new Error(
+      "Expensive validation must not run after ingress rejection",
+    );
+  });
+  const response = await handle(pending);
+  assert.equal(response.status, 429);
+  assert.equal(reader.mock.callCount(), 0);
+  assert.equal(formatter.mock.callCount(), 0);
+  assert.equal(providerCalls(), 0);
+});
+
+test("malformed attempts consume ingress allowance before expensive parsing", async () => {
+  const { handle, providerCalls } = makeEndpoint({
+    allowRequest: createInMemoryGenerationLimiter(() => 1000),
+  });
+  const statuses = [];
+  for (let i = 0; i < 5; i += 1)
+    statuses.push((await handle(request("{"))).status);
+  assert.deepEqual(statuses, [400, 400, 400, 400, 429]);
+  assert.equal(providerCalls(), 0);
+});
+
 test("in-memory request limit opens a fresh window after expiry", () => {
   let now = 1_000;
   const limiter = createInMemoryGenerationLimiter(() => now);
   const clientRequest = request(EXAMPLE_BRIEF, { "x-real-ip": "198.51.100.5" });
 
-  assert.deepEqual(Array.from({ length: 5 }, () => limiter(clientRequest)), [true, true, true, true, false]);
+  assert.deepEqual(
+    Array.from({ length: 5 }, () => limiter(clientRequest)),
+    [true, true, true, true, false],
+  );
   now += 20 * 60 * 1000;
   assert.equal(limiter(clientRequest), true);
 });
@@ -182,7 +246,11 @@ test("in-memory request limit opens a fresh window after expiry", () => {
 test("in-memory request limiter caps tracked clients and evicts expired entries", () => {
   let now = 1_000;
   const limiter = createInMemoryGenerationLimiter(() => now);
-  const client = (index) => new Request(endpointUrl, { method: "POST", headers: { "x-real-ip": `synthetic-client-${index}` } });
+  const client = (index) =>
+    new Request(endpointUrl, {
+      method: "POST",
+      headers: { "x-real-ip": `synthetic-client-${index}` },
+    });
 
   for (let index = 0; index < 2000; index += 1) {
     assert.equal(limiter(client(index)), true);
@@ -194,7 +262,11 @@ test("in-memory request limiter caps tracked clients and evicts expired entries"
 
 test("provider failures return a generic no-store error and preserve the submitted brief", async () => {
   const secretStack = "private-provider-detail api-key=secret-test-value";
-  const { handle } = makeEndpoint({ generate: async () => { throw new Error(secretStack); } });
+  const { handle } = makeEndpoint({
+    generate: async () => {
+      throw new Error(secretStack);
+    },
+  });
   const response = await handle(request(EXAMPLE_BRIEF));
   const responseText = await response.text();
 
@@ -206,8 +278,14 @@ test("provider failures return a generic no-store error and preserve the submitt
 
 test("provider rate limits return a generic retryable service error", async () => {
   const privateProviderMessage = "quota exceeded api-key=secret-test-value";
-  const rateLimit = Object.assign(new Error(privateProviderMessage), { status: 429 });
-  const { handle } = makeEndpoint({ generate: async () => { throw rateLimit; } });
+  const rateLimit = Object.assign(new Error(privateProviderMessage), {
+    status: 429,
+  });
+  const { handle } = makeEndpoint({
+    generate: async () => {
+      throw rateLimit;
+    },
+  });
   const response = await handle(request(EXAMPLE_BRIEF));
   const payload = await response.json();
 
@@ -221,7 +299,11 @@ test("provider timeouts return a generic gateway timeout", async () => {
   const privateProviderMessage = "request timed out api-key=secret-test-value";
   const timeout = new Error(privateProviderMessage);
   timeout.name = "APIConnectionTimeoutError";
-  const { handle } = makeEndpoint({ generate: async () => { throw timeout; } });
+  const { handle } = makeEndpoint({
+    generate: async () => {
+      throw timeout;
+    },
+  });
   const response = await handle(request(EXAMPLE_BRIEF));
   const payload = await response.json();
 
@@ -235,7 +317,9 @@ test("provider timeouts return a generic gateway timeout", async () => {
 test("model output that violates a deterministic budget invariant fails closed", async () => {
   const unsafeProposal = {
     ...EXAMPLE_PROPOSAL,
-    budgetAllocations: EXAMPLE_PROPOSAL.budgetAllocations.filter((line) => line.category !== "contingency"),
+    budgetAllocations: EXAMPLE_PROPOSAL.budgetAllocations.filter(
+      (line) => line.category !== "contingency",
+    ),
   };
   const { handle } = makeEndpoint({ generate: async () => unsafeProposal });
   const response = await handle(request(EXAMPLE_BRIEF));
