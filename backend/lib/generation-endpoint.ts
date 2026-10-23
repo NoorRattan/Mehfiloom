@@ -178,6 +178,12 @@ export function createGenerationEndpoint(options: {
       }
 
       const failure = providerFailure(error);
+      const providerStatus = typeof error === "object" && error !== null && "status" in error && typeof error.status === "number" ? error.status : undefined;
+      console.error("Planning provider request failed", {
+        name: error instanceof Error ? error.name : "UnknownError",
+        providerStatus,
+        incompleteResponse: error instanceof Error && error.message === "INCOMPLETE_MODEL_RESPONSE",
+      });
       return jsonResponse({ error: { code: failure.code, message: failure.message } }, failure.status);
     }
   };
