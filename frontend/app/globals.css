@@ -81,6 +81,10 @@ summary:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 5px;
 }
+[role="tabpanel"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 5px;
+}
 input:focus,
 select:focus,
 textarea:focus {
@@ -459,7 +463,7 @@ fieldset {
   left: 17%;
   width: 117px;
   height: 117px;
-  background: #c1593c;
+  background: #a7462f;
   color: #fff0d7;
   border-radius: 50%;
   display: grid;
@@ -474,7 +478,7 @@ fieldset {
   margin: 0 auto 7px;
 }
 .joy-stamp .flower circle {
-  fill: #c1593c;
+  fill: #a7462f;
 }
 .joy-stamp span {
   font-size: 12px;
@@ -743,7 +747,7 @@ fieldset {
   font-family: var(--serif);
   font-style: italic;
   font-size: 22px;
-  color: var(--accent);
+  color: #9c432d;
   margin-top: 4px;
 }
 .approach-step h3 {
@@ -754,7 +758,7 @@ fieldset {
 }
 .approach-step p {
   font-size: 11px;
-  color: #727366;
+  color: var(--muted);
   line-height: 1.9;
   max-width: 360px;
 }
@@ -790,7 +794,7 @@ fieldset {
   position: relative;
   top: 0;
   font-size: 9px;
-  color: #7c7968;
+  color: var(--muted);
 }
 .assistant-preview {
   display: grid;
@@ -874,7 +878,7 @@ fieldset {
 .note-response p {
   font-size: 10px;
   line-height: 1.8;
-  color: #7a7769;
+  color: var(--muted);
   margin-top: 7px;
 }
 .note-checks {
@@ -895,7 +899,7 @@ fieldset {
 .note-example {
   font-size: 6px;
   letter-spacing: 1.5px;
-  color: #8a8577;
+  color: var(--muted);
 }
 .closing-section {
   position: relative;
@@ -940,7 +944,7 @@ fieldset {
   font-size: 260px;
   line-height: 1;
   letter-spacing: -13px;
-  color: #c8c8aa0b;
+  color: #829174;
   pointer-events: none;
 }
 .site-footer {
@@ -962,7 +966,7 @@ fieldset {
   font-size: 23px;
   line-height: 1.1;
   font-style: italic;
-  color: #6c6d61;
+  color: var(--muted);
   margin-right: auto;
 }
 .footer-cta {
@@ -982,8 +986,8 @@ fieldset {
   gap: 20px;
   padding-block: 21px;
   border-top: 1px solid var(--line);
-  font-size: 8px;
-  color: #7f7e72;
+  font-size: 12px;
+  color: var(--muted);
 }
 .footer-bottom > span:nth-child(2) {
   font-family: var(--serif);
@@ -1020,7 +1024,7 @@ fieldset {
   --paper: #e9e9db;
   --ink: #324d3b;
   --accent: #4d6b49;
-  --muted: #5c6855;
+  --muted: #55624e;
   --line: #cbd0bd;
   --soft: #dce0ce;
   --chart-0: #3e5c42;
@@ -1320,7 +1324,7 @@ fieldset {
 .event-assistant-band p:not(.eyebrow) {
   font-size: 11px;
   line-height: 1.9;
-  color: #8b6b6b;
+  color: #705050;
   margin-bottom: 23px;
 }
 .theme-wedding.event-page .event-assistant-band .button-ink {
@@ -1523,7 +1527,7 @@ fieldset {
   font-size: 11px;
   line-height: 1.9;
   max-width: 280px;
-  color: #6b6a4d;
+  color: #605f42;
 }
 .birthday-assistant {
   display: grid;
@@ -1629,7 +1633,7 @@ fieldset {
   font-size: 12px;
   line-height: 1.9;
   margin: 15px 0 22px;
-  color: #76816d;
+  color: var(--muted);
 }
 .community-emblem {
   display: flex;
@@ -1680,7 +1684,7 @@ fieldset {
   padding-top: 16px;
   font-size: 7px;
   letter-spacing: 1.5px;
-  color: #7b836d;
+  color: var(--muted);
 }
 .community-purpose {
   display: grid;
@@ -1713,7 +1717,7 @@ fieldset {
   font-family: var(--serif);
   font-style: italic;
   font-size: 21px;
-  color: #81916a;
+  color: var(--accent);
   padding-top: 6px;
 }
 .community-purpose-list h3 {
@@ -2126,6 +2130,9 @@ fieldset {
   width: 18px;
   height: 18px;
   opacity: 0;
+  z-index: 1;
+  margin: 0;
+  cursor: pointer;
 }
 .task-checkbox {
   width: 18px;
@@ -2747,7 +2754,7 @@ fieldset {
   flex-shrink: 0;
 }
 .priority-high {
-  color: #98523f;
+  color: #853d2d;
   border-color: #c4a18a;
 }
 .result-ideas > article {
@@ -4921,6 +4928,9 @@ fieldset {
 }
 .workspace-main .completion-label {
   font-size: 11px !important;
+}
+.workspace-main .priority {
+  font-size: 11px;
 }
 .workspace-main .budget-row strong,
 .workspace-main .vendor-details li,

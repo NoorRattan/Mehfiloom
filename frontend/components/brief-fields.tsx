@@ -74,7 +74,7 @@ export default function BriefFields({
             onChange={(e) => onChange("guestCount", Number(e.target.value))}
           />
         </label>
-        <label className="field">
+        <div className="field" role="group" aria-label="Budget">
           <span>Budget</span>
           <div className="money-field">
             <select
@@ -98,7 +98,7 @@ export default function BriefFields({
               onChange={(e) => onChange("budgetAmount", e.target.value)}
             />
           </div>
-        </label>
+        </div>
       </div>
       <label className="field">
         <span>The feeling you’re going for</span>

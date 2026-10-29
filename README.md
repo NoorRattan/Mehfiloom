@@ -42,9 +42,9 @@ Missing or invalid provider configuration produces a visible error; the app does
 - Generates tailored plans through **Groq `openai/gpt-oss-120b`**, with event-specific guidance and revision history.
 - Validates model output with Zod, then divides the host's budget using exact integer minor-unit arithmetic. Allocations reconcile to the cap.
 - Provides an editable starter budget without AI; the interface labels its source clearly.
-- Saves independent event drafts, checkmarks, custom tasks and vendor notes in this browser. Exports a readable text copy.
+- Saves independent event drafts, checkmarks, custom tasks and vendor notes in this browser. Exports the complete plan, including ideas, vendor questions, assumptions and revision requests.
 - Carries AI timeline tasks and vendor questions into the matching organizer while retaining host task completion and notes.
-- Uses local fonts, responsive images, restrained motion and a lazy desktop Three.js sculpture with an SVG fallback.
+- Uses local fonts, responsive images, cached currency formatters and a lazy desktop Three.js sculpture with an SVG fallback. WebGL suspends offscreen, in hidden tabs, on mobile and when reduced motion is requested.
 
 A planning allocation is **not a vendor quote or proof of affordability**. Costs, bookings, availability, access arrangements and dietary requirements need confirmation with providers.
 
@@ -78,20 +78,24 @@ Next.js prerenders the ten public experience pages. The API is server-side; comp
 ## Verification
 
 ```sh
-npm test                       # 91 backend tests + 21 frontend tests
+npm test                       # 104 backend tests + 52 frontend tests
 npm run lint                   # Next.js, React, TypeScript and accessibility rules
 npm run typecheck              # Generate route types and strict TypeScript checks
 npm run build                  # Optimized Next.js production build
 npm run check:secrets           # Reachable Git history; locations only, no values
 npm audit --omit=dev            # Blocking production dependency audit
-node backend/scripts/report-full-audit.mjs
+npm audit                      # Blocking full audit, including development tools
+npx playwright install chromium firefox
+npm run test:browser            # Run after build; production app on port 3100
 ```
 
-`npm run check` runs tests, lint, types and build together. [GitHub Actions](.github/workflows/ci.yml) repeats these gates using Node 24, read-only permissions and pinned action revisions. [Dependabot](.github/dependabot.yml) checks dependency and action updates weekly.
+`npm run check` runs tests, lint, types and build together. [GitHub Actions](.github/workflows/ci.yml) repeats these gates, runs production browser tests and blocks on both dependency audits using Node 24, read-only permissions and pinned action revisions. [Dependabot](.github/dependabot.yml) checks dependency and action updates weekly.
 
-Frontend tests exercise all three organizers and assistants, independent persistence, damaged/denied storage, exact budget edits, provider errors, revision context and preservation of host work. Nine axe checks cover organizer/assistant and generated budget semantics. Tests mock provider responses and the Next image/link environment; they do not call a paid model. Color contrast and browser layout are not measured by jsdom. These checks do not certify full WCAG conformance or a Lighthouse score.
+Frontend tests exercise all three organizers and assistants, independent persistence, damaged/denied storage, exact budget edits, provider errors, cancellation, revision context and preservation of newer host work. Browser tests cover ten routes, keyboard navigation, mobile layout, actual downloads, saved allocation edits and complete generation/error/reload workflows. Chromium desktop, Firefox desktop and Pixel 7 emulation are configured. Axe checks include color contrast in real browsers; jsdom checks cover semantics. Provider responses are mocked and the test server clears the provider key; no paid model is called. Traces, screenshots and HTML reports stay in ignored local test folders. Automated checks do not certify full WCAG conformance or a Lighthouse score.
 
-The production audit is clean at the submission review. The full audit retains one documented **development-only** `braces` advisory affecting Next.js lint tooling. [SECURITY.md](SECURITY.md) explains its scope and the narrowly constrained audit exception. ESLint 10 is supported by the bundled Next.js 16.4.2 guidance; explicit peer overrides bridge three plugins whose published ranges still stop at ESLint 9. `unrs-resolver@1.12.2` is the sole pinned, reviewed dependency install-script approval.
+To run only Chromium desktop and mobile locally, use `npm run test:browser -- --project=chromium --project=mobile`. Firefox also needs its platform runtime dependencies; CI installs those on Linux before running all projects.
+
+Both production and full dependency audits reported zero vulnerabilities at the October 29, 2026 review. The earlier development-advisory exception has been removed; any newly reported vulnerability fails CI. ESLint 10 is supported by the bundled Next.js 16.4.2 guidance; explicit peer overrides bridge three plugins whose published ranges still stop at ESLint 9. `unrs-resolver@1.12.2` is the sole pinned, reviewed dependency install-script approval.
 
 ## Deploy on Vercel
 

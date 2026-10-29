@@ -14,6 +14,7 @@ import {
   parseBudgetMinor,
   proposalJsonSchema,
   proposalSchema,
+  validateProposalForBrief,
 } from "../lib/planner.ts";
 import { addCalendarDays, dateInTimeZone, isValidIanaTimeZone, resolveZonedDateTime } from "../lib/schedule.ts";
 
@@ -31,6 +32,27 @@ test("budget input rejects zero, negatives, excess decimals, and overflow", () =
   assert.throws(() => parseBudgetMinor("1.2", "JPY"));
 });
 
+test("currency validation rejects invented codes before formatting or generation", () => {
+  assert.equal(eventBriefSchema.parse({ ...EXAMPLE_BRIEF, currency: " jpy " }).currency, "JPY");
+  for (const currency of ["ZZZ", "BTC", "ABC", "XXX", "US", "<script>"]) {
+    assert.equal(eventBriefSchema.safeParse({ ...EXAMPLE_BRIEF, currency }).success, false, currency);
+    assert.throws(() => parseBudgetMinor("100", currency), /supported ISO 4217/);
+    assert.throws(() => formatMoney(100, currency), /supported ISO 4217/);
+  }
+});
+
+test("repeated budget operations reuse one formatter per supported currency", (t) => {
+  const original = Intl.NumberFormat;
+  const constructor = t.mock.method(Intl, "NumberFormat", function (...args) {
+    return new original(...args);
+  });
+  for (let index = 0; index < 100; index += 1) {
+    assert.equal(parseBudgetMinor("123", "UGX"), 123);
+    assert.match(formatMoney(123, "UGX"), /123/);
+  }
+  assert.equal(constructor.mock.callCount(), 1);
+});
+
 test("budget allocations reconcile exactly to the host cap in minor units", () => {
   const result = buildPlanResult(EXAMPLE_PROPOSAL, "INR", 101);
   const sum = result.lines.reduce((total, line) => total + line.amountMinor, 0);
@@ -39,6 +61,27 @@ test("budget allocations reconcile exactly to the host cap in minor units", () =
   assert.equal(result.allocatedMinor, 101);
   assert.equal(sum, result.totalMinor);
   assert.ok(result.lines.every((line) => Number.isInteger(line.amountMinor)));
+});
+
+test("integer allocation conserves tiny and maximum caps across varied priority weights", () => {
+  for (let seed = 1; seed <= 100; seed += 1) {
+    const proposal = {
+      ...EXAMPLE_PROPOSAL,
+      budgetAllocations: EXAMPLE_PROPOSAL.budgetAllocations.map((line, index) => ({
+        ...line,
+        weight: ((seed * (index + 13) * 97) % 1000) + 1,
+      })),
+    };
+    for (const cap of [1, 7, 101, seed * 7919, 1_000_000_000_000]) {
+      const result = buildPlanResult(proposal, "INR", cap);
+      const weightTotal = proposal.budgetAllocations.reduce((sum, line) => sum + line.weight, 0);
+      assert.equal(result.lines.reduce((sum, line) => sum + line.amountMinor, 0), cap);
+      for (const line of result.lines) {
+        const floor = Number(BigInt(cap) * BigInt(line.weight) / BigInt(weightTotal));
+        assert.ok(line.amountMinor === floor || line.amountMinor === floor + 1);
+      }
+    }
+  }
 });
 
 test("budget allocator rejects duplicate categories instead of hiding the duplicate", () => {
@@ -131,6 +174,29 @@ test("model proposals cannot set operational vendor availability", () => {
   const proposal = structuredClone(EXAMPLE_PROPOSAL);
   proposal.vendorChecklist[0].availability = "confirmed";
   assert.equal(proposalSchema.safeParse(proposal).success, false);
+});
+
+test("model text is trimmed and whitespace cannot satisfy required useful content", () => {
+  const padded = { ...EXAMPLE_PROPOSAL, conceptTitle: `  ${EXAMPLE_PROPOSAL.conceptTitle}  ` };
+  assert.equal(proposalSchema.parse(padded).conceptTitle, EXAMPLE_PROPOSAL.conceptTitle);
+  for (const [field, length] of [["conceptTitle", 3], ["overview", 30], ["theme", 3]]) {
+    assert.equal(proposalSchema.safeParse({ ...EXAMPLE_PROPOSAL, [field]: " ".repeat(length) }).success, false);
+  }
+  const emptyTask = structuredClone(EXAMPLE_PROPOSAL);
+  emptyTask.timeline[0].task = "     ";
+  assert.equal(proposalSchema.safeParse(emptyTask).success, false);
+});
+
+test("model timeline references must belong to the submitted brief", () => {
+  const proposal = structuredClone(EXAMPLE_PROPOSAL);
+  proposal.timeline[0].sessionId = "main-session";
+  assert.throws(() => validateProposalForBrief(proposal, EXAMPLE_BRIEF), /unknown event session/);
+  const brief = { ...EXAMPLE_BRIEF, sessions: [{ id: "main-session", name: "Main gathering", date: "2027-02-14", guestCount: 120 }] };
+  assert.equal(validateProposalForBrief(proposal, brief).timeline[0].sessionId, "main-session");
+  proposal.timeline[0].sessionId = "invented-session";
+  assert.throws(() => validateProposalForBrief(proposal, brief), /unknown event session/);
+  proposal.timeline[0].sessionId = null;
+  assert.doesNotThrow(() => validateProposalForBrief(proposal, brief));
 });
 
 test("each event example is valid, distinct, access-aware, and culturally optional", () => {
@@ -363,12 +429,30 @@ test("Groq adapter rejects empty, truncated, malformed and schema-invalid provid
 
   await assert.rejects(createProposalGenerator(clientReturning(""))(EXAMPLE_BRIEF), /INCOMPLETE_MODEL_RESPONSE/);
   await assert.rejects(createProposalGenerator(clientReturning("{}", "length"))(EXAMPLE_BRIEF), /INCOMPLETE_MODEL_RESPONSE/);
+  for (const finishReason of ["content_filter", "tool_calls", null]) {
+    await assert.rejects(createProposalGenerator(clientReturning(JSON.stringify(EXAMPLE_PROPOSAL), finishReason))(EXAMPLE_BRIEF), /INCOMPLETE_MODEL_RESPONSE/);
+  }
 
   const invalidProposal = { ...EXAMPLE_PROPOSAL, timeline: [] };
   await assert.rejects(
     createProposalGenerator(clientReturning(JSON.stringify(invalidProposal)))(EXAMPLE_BRIEF),
     /Too small/i,
   );
+});
+
+test("Groq forwards cancellation and refuses invented session references", async () => {
+  let receivedSignal;
+  const proposal = structuredClone(EXAMPLE_PROPOSAL);
+  proposal.timeline[0].sessionId = "invented-session";
+  const client = { chat: { completions: {
+    async create(_request, options) {
+      receivedSignal = options.signal;
+      return { choices: [{ message: { content: JSON.stringify(proposal) }, finish_reason: "stop" }] };
+    },
+  } } };
+  const controller = new AbortController();
+  await assert.rejects(createProposalGenerator(client)(EXAMPLE_BRIEF, { signal: controller.signal }), /unknown event session/);
+  assert.equal(receivedSignal, controller.signal);
 });
 
 test("Groq adapter validates the brief before calling the provider", async () => {

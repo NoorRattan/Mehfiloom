@@ -131,16 +131,23 @@ export function newBrief(kind: EventKind): EventBrief {
   };
 }
 
+const moneyFormatters = new Map<string, Intl.NumberFormat>();
+const MAX_MONEY_FORMATTERS = 16;
+
 export function money(minor: number, currency = "INR") {
-  const digits =
-    new Intl.NumberFormat("en", {
+  const normalized = currency.trim().toUpperCase();
+  let formatter = moneyFormatters.get(normalized);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat(normalized === "INR" ? "en-IN" : "en", {
       style: "currency",
-      currency,
-    }).resolvedOptions().maximumFractionDigits ?? 2;
-  return new Intl.NumberFormat(currency === "INR" ? "en-IN" : "en", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 0,
-    maximumFractionDigits: digits,
-  }).format(minor / 10 ** digits);
+      currency: normalized,
+      minimumFractionDigits: 0,
+    });
+    if (moneyFormatters.size >= MAX_MONEY_FORMATTERS) {
+      moneyFormatters.delete(moneyFormatters.keys().next().value!);
+    }
+    moneyFormatters.set(normalized, formatter);
+  }
+  const digits = formatter.resolvedOptions().maximumFractionDigits ?? 2;
+  return formatter.format(minor / 10 ** digits);
 }

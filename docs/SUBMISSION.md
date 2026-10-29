@@ -17,8 +17,8 @@ The brief is to create a GenAI assistant for weddings, birthdays and community e
 | Code quality      | Strict TypeScript, shared typed workspace behavior, Server Component pages, thin framework API adapter, separated provider/domain/HTTP modules                                                          | Run lint and type checks; inspect `frontend/components/`, `backend/lib/`                          |
 | Security          | Server-only key, bounded streamed input, strict schemas, ingress throttling, bounded caches, no-store responses, escaped text, generic provider errors, read-only pinned CI                             | Run endpoint/resource regression tests and audits; read `SECURITY.md`                             |
 | Efficiency        | Prerendered experience pages, local fonts, responsive image sizing, lazy desktop WebGL, fallback artwork, bounded provider calls/output/timeout                                                         | Inspect build output and network behavior; do not infer a Lighthouse score                        |
-| Testing           | 91 backend tests and 21 DOM frontend tests; CI repeats tests, lint, types, build and audits                                                                                                             | Run `npm run check`; examine test names and latest GitHub Actions run                             |
-| Accessibility     | Skip link, semantic headings, labelled controls, focus indicators, native checkboxes/details, announced status/errors, progress semantics, budget table roles, reduced motion, larger planning controls | Nine axe semantic checks plus keyboard/manual review; contrast/layout require real-browser checks |
+| Testing           | Backend contract/property checks, frontend DOM regressions and production browser workflows; CI repeats tests, lint, types, build and both audits                                                        | Run `npm run check`, then `npm run test:browser`; examine the latest GitHub Actions run             |
+| Accessibility     | Keyboard organizer tabs, skip link, labelled controls, focus indicators, native checkboxes/details, announced status/errors, progress and budget semantics, live reduced-motion support                 | Real-browser axe checks include contrast; browser tests exercise mobile layout and keyboard paths  |
 | Problem alignment | Three event identities; personal AI concept, exact budget allocation, timeline, vendor questions, ideas, editable organizer, isolated drafts and export                                                 | Follow the demo journey below                                                                     |
 
 ## Five-minute demonstration
@@ -30,6 +30,18 @@ The brief is to create a GenAI assistant for weddings, birthdays and community e
 5. **Show isolation.** Open Birthday and Community organizers. They retain their own briefs and palettes. Refresh a page to demonstrate browser persistence. AI generation is subject to provider and per-process request limits; avoid repeated demonstrations that exhaust quota.
 
 ## Verification record
+
+At the October 29, 2026 quality review:
+
+- 104 backend tests and 52 frontend tests passed (156 total). Backend allocation coverage includes 500 varied combinations of caps and priority weights.
+- The production Chromium desktop and Pixel 7 browser run passed 31 tests. One desktop invocation of the mobile-only navigation test was intentionally skipped. All ten public routes passed automated axe checks including color contrast and horizontal-overflow checks.
+- Each event journey exercised saved manual allocation edits, successful mocked generation, failed revision recovery, checklist preservation, reload, readable file download and isolation from another event type. No live provider calls were made by these tests.
+- Keyboard checks cover the skip link's actual focus continuation and organizer arrow/End navigation. The open mobile menu also receives an axe check and Escape/focus-restoration check.
+- Lint, strict frontend/backend/browser-test types, production build, production audit and full development audit passed. Both audits reported zero vulnerabilities; there are no advisory exceptions.
+- Firefox desktop is included in Linux CI. The local Windows Firefox binary could not launch because its system runtime configuration was missing, so the local run explicitly selected Chromium and mobile; use the latest CI result for Firefox evidence.
+- Improvements include upload deadlines and cancellation, stricter model/currency/session validation, complete export, damaged-result recovery, storage failure/capacity notices, newer-draft protection and live WebGL suspension.
+
+These are measured engineering checks, not a claim of a particular judge score or complete WCAG conformance.
 
 At the October 23, 2026 local review:
 
@@ -54,7 +66,7 @@ Use the latest CI/deployment results for later application revisions; these obse
 
 The earlier deployment had three warning groups: obsolete `cache-dir` npm configuration (repeated at install/build), ESLint 9 deprecation, and an unreviewed resolver postinstall script. The repository now removes only the obsolete environment variable before Vercel npm commands, uses ESLint 10 with the Next.js-supported peer overrides, and explicitly approves only reviewed `unrs-resolver@1.12.2`. All three warning groups were absent in the verified production build above. The remaining two Deployment Settings recommendations are platform suggestions, not build warnings.
 
-The separate development dependency advisory remains disclosed in `SECURITY.md`; no warning suppression or incompatible force-downgrade is used to hide it.
+At the October 29 review the full dependency audit also returned zero vulnerabilities. The development-advisory exception was removed; both audits now block CI.
 
 ## Honest limitations
 

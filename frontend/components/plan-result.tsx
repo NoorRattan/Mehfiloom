@@ -160,7 +160,7 @@ export function PlanResultView({
         </div>
       </div>
       <Link href={`/${kind}/organize`} className="button button-event">
-        It’s saved. Open your organizer <ArrowUpRight size={16} />
+        Open your plan in the organizer <ArrowUpRight size={16} />
       </Link>
     </section>
   );

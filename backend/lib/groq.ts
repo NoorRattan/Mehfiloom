@@ -2,7 +2,7 @@ import Groq from "groq-sdk";
 import {
   generationRequestSchema,
   proposalJsonSchema,
-  proposalSchema,
+  validateProposalForBrief,
   type EventType,
 } from "./planner.ts";
 
@@ -100,7 +100,7 @@ export function createProposalGenerator(
   client: GroqChatClient,
   model = DEFAULT_MODEL,
 ) {
-  return async function generateWithClient(input: unknown) {
+  return async function generateWithClient(input: unknown, options?: { signal?: AbortSignal }) {
     const generationRequest = generationRequestSchema.parse(input);
     const { brief } = generationRequest;
     const revisionRequest = "revisionRequest" in generationRequest ? generationRequest.revisionRequest : undefined;
@@ -154,24 +154,25 @@ Keep all user must-haves and access/dietary needs. Never add an activity the hos
     }, {
       timeout: REQUEST_TIMEOUT_MS,
       maxRetries: 0,
+      ...(options?.signal ? { signal: options.signal } : {}),
     });
 
     const choice = response.choices[0];
-    if (!choice?.message.content || choice.finish_reason === "length") {
+    if (!choice?.message.content || choice.finish_reason !== "stop") {
       throw new Error("INCOMPLETE_MODEL_RESPONSE");
     }
 
-    const proposal = proposalSchema.parse(JSON.parse(choice.message.content));
+    const proposal = validateProposalForBrief(JSON.parse(choice.message.content), brief);
     return proposal;
   };
 }
 
-export async function generateProposal(input: unknown) {
+export async function generateProposal(input: unknown, options?: { signal?: AbortSignal }) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     throw new Error("PROVIDER_NOT_CONFIGURED");
   }
 
   const client = new Groq({ apiKey });
-  return createProposalGenerator(client)(input);
+  return createProposalGenerator(client)(input, options);
 }

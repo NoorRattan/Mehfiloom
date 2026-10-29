@@ -3,6 +3,7 @@ import {
   buildPlanResult,
   generationRequestSchema,
   parseBudgetMinor,
+  validateProposalForBrief,
   type PlannerProposal,
 } from "./planner.ts";
 
@@ -10,6 +11,7 @@ const MAX_BODY_BYTES = 16 * 1024;
 const WINDOW_MS = 20 * 60 * 1000;
 const MAX_CALLS_PER_WINDOW = 4;
 const MAX_TRACKED_CLIENTS = 2000;
+const BODY_TIMEOUT_MS = 5_000;
 
 class RequestProblem extends Error {
   readonly status: number;
@@ -62,7 +64,7 @@ export function createInMemoryGenerationLimiter(
   };
 }
 
-async function readJsonBody(request: Request): Promise<unknown> {
+async function readJsonBody(request: Request, timeoutMs: number): Promise<unknown> {
   const declaredLength = Number(request.headers.get("content-length"));
   if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
     throw new RequestProblem(
@@ -77,30 +79,46 @@ async function readJsonBody(request: Request): Promise<unknown> {
     );
 
   const reader = request.body.getReader();
-  const decoder = new TextDecoder();
+  const decoder = new TextDecoder("utf-8", { fatal: true });
   let text = "";
   let byteCount = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    byteCount += value.byteLength;
-    if (byteCount > MAX_BODY_BYTES) {
-      await reader.cancel();
-      throw new RequestProblem(
-        "The event brief is too large. Shorten the notes and try again.",
-        413,
-      );
-    }
-    text += decoder.decode(value, { stream: true });
-  }
-  text += decoder.decode();
+  let finished = false;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: () => void = () => {};
+  const interrupted = new Promise<never>((_, reject) => {
+    onAbort = () => reject(new RequestProblem("The event brief upload was cancelled. Please try again.", 408));
+    if (request.signal.aborted) onAbort();
+    else request.signal.addEventListener("abort", onAbort, { once: true });
+    timeout = setTimeout(() => reject(new RequestProblem("The event brief took too long to upload. Please try again.", 408)), timeoutMs);
+  });
   try {
+    while (true) {
+      const { done, value } = await Promise.race([reader.read(), interrupted]);
+      if (done) break;
+      byteCount += value.byteLength;
+      if (byteCount > MAX_BODY_BYTES) {
+        throw new RequestProblem(
+          "The event brief is too large. Shorten the notes and try again.",
+          413,
+        );
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    finished = true;
     return JSON.parse(text) as unknown;
-  } catch {
+  } catch (error) {
+    if (error instanceof RequestProblem) throw error;
     throw new RequestProblem(
       "The event brief could not be read. Please try again.",
       400,
     );
+  } finally {
+    clearTimeout(timeout);
+    request.signal.removeEventListener("abort", onAbort);
+    // Cancellation must not wait on an uncooperative stream source's cancel callback.
+    if (!finished) void reader.cancel().catch(() => {});
+    reader.releaseLock();
   }
 }
 
@@ -164,8 +182,9 @@ function providerFailure(error: unknown): {
 
 export function createGenerationEndpoint(options: {
   hasProviderKey: () => boolean;
-  generate: (input: unknown) => Promise<PlannerProposal>;
+  generate: (input: unknown, options?: { signal?: AbortSignal }) => Promise<PlannerProposal>;
   allowRequest: GenerationLimiter;
+  bodyTimeoutMs?: number;
 }) {
   return async function handleGenerationRequest(
     request: Request,
@@ -194,7 +213,7 @@ export function createGenerationEndpoint(options: {
           { "Retry-After": String(WINDOW_MS / 1000) },
         );
       }
-      const input = await readJsonBody(request);
+      const input = await readJsonBody(request, options.bodyTimeoutMs ?? BODY_TIMEOUT_MS);
       const parsed = generationRequestSchema.safeParse(input);
       if (!parsed.success) {
         return jsonResponse(
@@ -238,7 +257,13 @@ export function createGenerationEndpoint(options: {
       // Preserve the full wrapper in revision calls so accepted host constraints reach the model.
       const providerInput =
         "revisionRequest" in parsed.data ? parsed.data : brief;
-      const proposal = await options.generate(providerInput);
+      if (request.signal.aborted) {
+        throw new RequestProblem("The planning request was cancelled. Please try again.", 408);
+      }
+      const proposal = validateProposalForBrief(
+        await options.generate(providerInput, { signal: request.signal }),
+        brief,
+      );
       const result = buildPlanResult(proposal, brief.currency, totalMinor);
       return jsonResponse({ result });
     } catch (error) {

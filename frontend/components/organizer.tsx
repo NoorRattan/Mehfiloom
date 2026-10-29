@@ -27,11 +27,13 @@ import BriefFields from "./brief-fields";
 import { BudgetView } from "./plan-result";
 import { Flower } from "./chrome";
 import BudgetEditor from "./budget-editor";
+import { exportWorkspaceText } from "@/lib/plan-export";
+import OrganizerTabs, { type OrganizerTab } from "./organizer-tabs";
+import WorkspaceStorageStatus from "./workspace-storage-status";
 
-type Tab = "overview" | "budget" | "checklist" | "vendors";
 export default function Organizer({ kind }: { kind: EventKind }) {
-  const { state, update } = useWorkspace(kind);
-  const [tab, setTab] = useState<Tab>("overview");
+  const { state, update, storageStatus } = useWorkspace(kind);
+  const [tab, setTab] = useState<OrganizerTab>("overview");
   const [task, setTask] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -90,12 +92,13 @@ export default function Organizer({ kind }: { kind: EventKind }) {
   }
   function createBudget() {
     setError("");
+    setNotice("");
     try {
       const total = parseBudgetMinor(
         state.brief.budgetAmount,
         state.brief.currency,
       );
-      update((current) => ({
+      const accepted = update((current) => ({
         ...current,
         result: buildPlanResult(
           current.result?.proposal ?? getEventTemplateProposal(kind),
@@ -104,7 +107,9 @@ export default function Organizer({ kind }: { kind: EventKind }) {
         ),
         resultSource: current.resultSource ?? "starter",
       }));
-      setNotice("Your budget allocation is ready and saved.");
+      if (!accepted) return;
+      setEditingBudget(false);
+      setNotice("Your budget allocation is ready.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Please check your budget.");
     }
@@ -121,48 +126,19 @@ export default function Organizer({ kind }: { kind: EventKind }) {
       setError("Your checklist has reached 50 custom tasks.");
       return;
     }
-    update((current) => ({
+    const accepted = update((current) => ({
       ...current,
       customTasks: [...current.customTasks, title],
     }));
+    if (!accepted) return;
     setTask("");
     setError("");
   }
   function exportPlan() {
-    const lines = [
-      state.brief.eventName || `My ${data.singular}`,
-      `Location: ${state.brief.location || "To be decided"}`,
-      `Date: ${state.brief.eventDate || "To be decided"}`,
-      `Guests: ${state.brief.guestCount}`,
-      `Budget: ${budgetLabel}`,
-      "",
-      "CHECKLIST",
-      ...tasks.map(
-        (item) =>
-          `${state.checked.includes(item.title) ? "[x]" : "[ ]"} ${item.title} — ${item.timing}`,
-      ),
-      "",
-      "VENDOR NOTES",
-      ...Object.entries(state.vendorNotes).map(
-        ([category, notes]) => `${category}: ${notes}`,
-      ),
-    ];
-    if (state.result)
-      lines.push(
-        "",
-        "BUDGET ALLOCATION",
-        ...state.result.lines.map(
-          (line) =>
-            `${line.category}: ${money(line.amountMinor, state.result!.currency)}`,
-        ),
-        "",
-        "PERSONAL IDEAS",
-        ...state.result.proposal.ideas.map(
-          (idea) => `${idea.title}: ${idea.whyItFits}`,
-        ),
-      );
     const url = URL.createObjectURL(
-      new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" }),
+      new Blob([exportWorkspaceText(state, tasks, budgetLabel)], {
+        type: "text/plain;charset=utf-8",
+      }),
     );
     const a = document.createElement("a");
     a.href = url;
@@ -225,9 +201,7 @@ export default function Organizer({ kind }: { kind: EventKind }) {
               kind={kind}
               compact
             />
-            <p className="save-note">
-              <span /> Stored on this browser · no account needed
-            </p>
+            <WorkspaceStorageStatus status={storageStatus} kind={kind} />
           </div>
         </aside>
         <div className="workspace-content">
@@ -279,26 +253,7 @@ export default function Organizer({ kind }: { kind: EventKind }) {
               </strong>
             </div>
           </div>
-          <nav className="workspace-tabs" aria-label="Organizer sections">
-            {(["overview", "budget", "checklist", "vendors"] as const).map(
-              (item) => (
-                <button
-                  key={item}
-                  className={tab === item ? "selected" : ""}
-                  onClick={() => setTab(item)}
-                  aria-pressed={tab === item}
-                >
-                  {item === "overview"
-                    ? "The overview"
-                    : item === "budget"
-                      ? "Your budget"
-                      : item === "checklist"
-                        ? "The checklist"
-                        : "Your vendors"}
-                </button>
-              ),
-            )}
-          </nav>
+          <OrganizerTabs kind={kind} selected={tab} onSelect={setTab} />
           {notice && (
             <p className="success-message" role="status">
               <Check size={15} />
@@ -316,6 +271,12 @@ export default function Organizer({ kind }: { kind: EventKind }) {
               {error}
             </p>
           )}
+          <div
+            id={`${kind}-organizer-panel`}
+            role="tabpanel"
+            aria-labelledby={`${kind}-tab-${tab}`}
+            tabIndex={0}
+          >
           {(tab === "overview" || tab === "checklist") && (
             <section className="workspace-panel">
               <div className="panel-title">
@@ -413,9 +374,9 @@ export default function Organizer({ kind }: { kind: EventKind }) {
                       result={state.result}
                       onCancel={() => setEditingBudget(false)}
                       onSave={(result) => {
-                        update((current) => ({ ...current, result }));
+                        if (!update((current) => ({ ...current, result }))) return;
                         setEditingBudget(false);
-                        setNotice("Your updated budget allocation is saved.");
+                        setNotice("Your budget allocation is updated.");
                       }}
                     />
                   ) : (
@@ -518,8 +479,9 @@ export default function Organizer({ kind }: { kind: EventKind }) {
               <Flower />
             </div>
           )}
+          </div>
           <p className="workspace-bottom-note">
-            Your draft stays in this browser. Export a copy to keep it with you.
+            Export a copy of your draft to keep it with you.
           </p>
         </div>
       </div>

@@ -6,13 +6,14 @@
     "dev": "next dev frontend",
     "build": "next build frontend",
     "start": "next start frontend",
-    "lint": "eslint frontend backend",
+    "lint": "eslint frontend backend e2e playwright.config.ts",
     "test": "npm run test:backend && npm run test:frontend",
     "test:backend": "node --experimental-strip-types --test backend/tests/*.test.mjs",
     "test:frontend": "vitest run",
-    "typecheck": "next typegen frontend && tsc --project frontend/tsconfig.json --noEmit --incremental false",
+    "typecheck": "next typegen frontend && tsc --project frontend/tsconfig.json --noEmit --incremental false && tsc --project e2e/tsconfig.json --noEmit",
     "check": "npm test && npm run lint && npm run typecheck && npm run build",
-    "check:secrets": "node backend/scripts/check-secrets.mjs"
+    "check:secrets": "node backend/scripts/check-secrets.mjs",
+    "test:browser": "playwright test"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",
@@ -33,6 +34,8 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@playwright/test": "^1.64.1",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.8",

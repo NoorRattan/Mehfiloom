@@ -56,8 +56,14 @@ jobs:
       - name: Build production app
         run: npm run build
 
+      - name: Install test browsers
+        run: npx playwright install --with-deps chromium firefox
+
+      - name: Test production workflows, responsive layout and accessibility
+        run: npm run test:browser
+
       - name: Audit production dependencies
         run: npm audit --omit=dev
 
       - name: Report full dependency audit
-        run: node backend/scripts/report-full-audit.mjs
+        run: npm audit

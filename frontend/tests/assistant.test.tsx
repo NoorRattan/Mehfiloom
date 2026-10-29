@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import axe from "axe-core";
@@ -29,6 +29,88 @@ function seed(kind: EventKind) {
 }
 
 describe("dedicated assistants", () => {
+  it("admits one request, cancels it, and preserves the saved draft", async () => {
+    const user = userEvent.setup();
+    const initial = seed("wedding");
+    let signal: AbortSignal | undefined;
+    const fetchMock = vi.fn((_url: string, options: RequestInit) => {
+      signal = options.signal as AbortSignal;
+      return new Promise<Response>((_resolve, reject) => {
+        signal!.addEventListener("abort", () => reject(signal!.reason), { once: true });
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<Assistant kind="wedding" />);
+    const composer = screen.getByRole("button", { name: "Create your tailored plan" }).closest("form")!;
+    act(() => {
+      fireEvent.submit(composer);
+      fireEvent.submit(composer);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Cancel planning" }));
+    expect(signal?.aborted).toBe(true);
+    expect(await screen.findByRole("status")).toHaveTextContent("Planning cancelled");
+    expect(screen.getByRole("button", { name: "Create your tailored plan" })).toBeEnabled();
+    expect(JSON.parse(window.localStorage.getItem("mehfiloom:v2:wedding")!)).toEqual(initial);
+  });
+
+  it("does not overwrite a newer browser draft with a pending response", async () => {
+    const user = userEvent.setup();
+    const initial = seed("birthday");
+    const result = buildPlanResult(getEventTemplateProposal("birthday"), "INR", 100000);
+    let respond!: (response: Response) => void;
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { respond = resolve; })));
+    render(<Assistant kind="birthday" />);
+    await user.click(screen.getByRole("button", { name: "Create your tailored plan" }));
+    const newer = { ...initial, brief: { ...initial.brief, location: "Jaipur" } };
+    act(() => {
+      window.localStorage.setItem("mehfiloom:v2:birthday", JSON.stringify(newer));
+      window.dispatchEvent(new StorageEvent("storage", { key: "mehfiloom:v2:birthday" }));
+      respond(Response.json({ result }));
+    });
+    expect(await screen.findByRole("alert")).toHaveTextContent("Your draft changed");
+    expect(JSON.parse(window.localStorage.getItem("mehfiloom:v2:birthday")!)).toEqual(newer);
+  });
+
+  it("aborts on navigation and ignores a provider that resolves after unmount", async () => {
+    const user = userEvent.setup();
+    const initial = seed("community");
+    let respond!: (response: Response) => void;
+    let signal: AbortSignal | undefined;
+    vi.stubGlobal("fetch", vi.fn((_url: string, options: RequestInit) => {
+      signal = options.signal as AbortSignal;
+      return new Promise<Response>((resolve) => { respond = resolve; });
+    }));
+    const { unmount } = render(<Assistant kind="community" />);
+    await user.click(screen.getByRole("button", { name: "Create your tailored plan" }));
+    unmount();
+    expect(signal?.aborted).toBe(true);
+    await act(async () => respond(Response.json({
+      result: buildPlanResult(getEventTemplateProposal("community"), "INR", 100000),
+    })));
+    expect(JSON.parse(window.localStorage.getItem("mehfiloom:v2:community")!)).toEqual(initial);
+  });
+
+  it.each([null, [], { result: null }])("handles an invalid successful JSON envelope safely: %j", async (payload) => {
+    const user = userEvent.setup();
+    seed("wedding");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(payload)));
+    render(<Assistant kind="wedding" />);
+    await user.click(screen.getByRole("button", { name: "Create your tailored plan" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("incomplete plan");
+    expect(screen.getByRole("button", { name: "Create your tailored plan" })).toBeEnabled();
+  });
+
+  it("explains a non-JSON service error without exposing parser internals", async () => {
+    const user = userEvent.setup();
+    seed("wedding");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("<html>Upstream unavailable</html>", { status: 502 })));
+    render(<Assistant kind="wedding" />);
+    await user.click(screen.getByRole("button", { name: "Create your tailored plan" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("unreadable response. Your draft is safe");
+    expect(screen.queryByText(/Unexpected token/)).not.toBeInTheDocument();
+  });
+
   it.each(eventKinds)(
     "%s sends its own brief, preserves work on failure and carries revisions forward",
     async (kind) => {
@@ -74,7 +156,7 @@ describe("dedicated assistants", () => {
       );
       expect(sent.priorRevisionRequests).toEqual([]);
       expect(
-        screen.getByRole("link", { name: /It’s saved. Open your organizer/ }),
+        screen.getByRole("link", { name: /Open your plan in the organizer/ }),
       ).toHaveAttribute("href", `/${kind}/organize`);
       await user.type(
         prompt,

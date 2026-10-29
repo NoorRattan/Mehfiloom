@@ -13,16 +13,21 @@ import {
   eventBriefSchema,
   parseBudgetMinor,
   type EventBrief,
-  type PlanResult,
 } from "@/lib/planner";
 import { events, type EventKind } from "@/lib/events";
-import { useWorkspace, planResultSchema } from "@/lib/workspace-store";
+import { useWorkspace } from "@/lib/workspace-store";
+import { readGenerationResponse } from "@/lib/generation-client";
 import BriefFields from "./brief-fields";
 import { Flower } from "./chrome";
 import { PlanResultView } from "./plan-result";
+import WorkspaceStorageStatus from "./workspace-storage-status";
 
 export default function Assistant({ kind }: { kind: EventKind }) {
-  const { state, update } = useWorkspace(kind);
+  return <AssistantWorkspace key={kind} kind={kind} />;
+}
+
+function AssistantWorkspace({ kind }: { kind: EventKind }) {
+  const { state, update, storageStatus } = useWorkspace(kind);
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -31,7 +36,11 @@ export default function Assistant({ kind }: { kind: EventKind }) {
   const resultRef = useRef<HTMLDivElement>(null);
   const contextRef = useRef<HTMLFormElement>(null);
   const data = events[kind];
-  useEffect(() => () => controller.current?.abort(), []);
+  useEffect(() => () => {
+    const pending = controller.current;
+    controller.current = null;
+    pending?.abort();
+  }, [kind]);
   function change<K extends keyof EventBrief>(key: K, value: EventBrief[K]) {
     update((current) => ({
       ...current,
@@ -40,6 +49,8 @@ export default function Assistant({ kind }: { kind: EventKind }) {
   }
   async function generate(event: FormEvent) {
     event.preventDefault();
+    // React state updates do not prevent two submits in the same event turn.
+    if (controller.current) return;
     setError("");
     setStatus("");
     if (!contextRef.current?.reportValidity()) {
@@ -74,6 +85,7 @@ export default function Assistant({ kind }: { kind: EventKind }) {
     setBusy(true);
     const abort = new AbortController();
     controller.current = abort;
+    const startingPlan = JSON.stringify([state.brief, state.result, state.revisionRequests]);
     const timeout = window.setTimeout(() => abort.abort(), 45000);
     try {
       const response = await fetch("/api/generate", {
@@ -86,27 +98,28 @@ export default function Assistant({ kind }: { kind: EventKind }) {
         }),
         signal: abort.signal,
       });
-      const body = (await response.json()) as {
-        result?: PlanResult;
-        error?: { message?: string };
-      };
-      if (!response.ok || !body.result)
-        throw new Error(
-          body.error?.message ??
-            "We couldn’t create your plan. Please try again.",
-        );
-      if (!planResultSchema.safeParse(body.result).success)
-        throw new Error(
-          "The planning service returned an incomplete plan. Please try again.",
-        );
-      update((current) => ({
-        ...current,
-        result: body.result!,
-        resultSource: "ai",
-        revisionRequests: [...current.revisionRequests, requestText],
-      }));
+      const result = await readGenerationResponse(response);
+      if (controller.current !== abort) return;
+      if (abort.signal.aborted) throw abort.signal.reason;
+      let applied = false;
+      const accepted = update((current) => {
+        if (JSON.stringify([current.brief, current.result, current.revisionRequests]) !== startingPlan)
+          return current;
+        applied = true;
+        return {
+          ...current,
+          result,
+          resultSource: "ai",
+          revisionRequests: [...current.revisionRequests, requestText],
+        };
+      });
+      if (!accepted) return;
+      if (!applied) {
+        setError("Your draft changed while this plan was being created. Your newer details are safe; create a plan again with the updated brief.");
+        return;
+      }
       setPrompt("");
-      setStatus("Your tailored plan is ready and saved to your organizer.");
+      setStatus("Your tailored plan is ready in your organizer.");
       requestAnimationFrame(() =>
         resultRef.current?.scrollIntoView({
           behavior: window.matchMedia("(prefers-reduced-motion: reduce)")
@@ -117,8 +130,13 @@ export default function Assistant({ kind }: { kind: EventKind }) {
         }),
       );
     } catch (e) {
+      if (controller.current !== abort) return;
+      if (abort.signal.reason === "host-cancelled") {
+        setStatus("Planning cancelled. Your draft and previous plan are safe.");
+        return;
+      }
       setError(
-        e instanceof Error && e.name === "AbortError"
+        abort.signal.aborted
           ? "The request took too long. Your draft is safe; please try again."
           : e instanceof Error
             ? e.message
@@ -126,8 +144,10 @@ export default function Assistant({ kind }: { kind: EventKind }) {
       );
     } finally {
       window.clearTimeout(timeout);
-      setBusy(false);
-      controller.current = null;
+      if (controller.current === abort) {
+        setBusy(false);
+        controller.current = null;
+      }
     }
   }
   return (
@@ -166,9 +186,7 @@ export default function Assistant({ kind }: { kind: EventKind }) {
               />
             </fieldset>
           </form>
-          <span className="save-note">
-            <span /> Stored on this browser
-          </span>
+          <WorkspaceStorageStatus status={storageStatus} kind={kind} />
         </aside>
         <div className="assistant-conversation">
           <div className="assistant-welcome">
@@ -200,7 +218,7 @@ export default function Assistant({ kind }: { kind: EventKind }) {
             </h2>
             <p>
               {state.resultSource === "ai"
-                ? "Your plan is saved below. Tell me what you’d like to change."
+                ? "Your current plan is below. Tell me what you’d like to change."
                 : "Tell me what you’re imagining. We’ll give it a little shape, together."}
             </p>
             <div className="prompt-suggestions">
@@ -265,10 +283,15 @@ export default function Assistant({ kind }: { kind: EventKind }) {
             availability with vendors.
           </p>
           {busy && (
-            <p className="generation-progress" role="status">
-              <LoaderCircle className="loading-spin" size={16} />
-              Finding the threads that bring your day together…
-            </p>
+            <div>
+              <p className="generation-progress" role="status">
+                <LoaderCircle className="loading-spin" size={16} />
+                Finding the threads that bring your day together…
+              </p>
+              <button className="text-link" type="button" onClick={() => controller.current?.abort("host-cancelled")}>
+                Cancel planning
+              </button>
+            </div>
           )}
           {error && (
             <div className="error-message" role="alert">

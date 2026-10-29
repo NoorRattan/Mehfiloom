@@ -822,6 +822,11 @@ export function validateSavedPlan(input: unknown): SavedPlan {
     throw new Error("The saved budget cap does not match the event brief.");
   }
   buildPlanResult(plan.proposal, plan.budget.currency, plan.budget.capMinor);
+  if (plan.undoRevision) {
+    // A snapshot is imported data too: validate references, totals and cycles now,
+    // before a user attempts to restore it. Clear undo to keep this check bounded.
+    validateSavedPlan({ ...plan, ...plan.undoRevision.snapshot, undoRevision: null });
+  }
   return plan;
 }
 

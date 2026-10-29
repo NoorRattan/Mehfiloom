@@ -30,17 +30,30 @@ export default function Sculpture() {
   const [visible, setVisible] = useState(false);
   const [spin, setSpin] = useState(0);
   useEffect(() => {
-    if (
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
-      window.matchMedia("(max-width: 760px)").matches
-    )
-      return;
+    if (typeof IntersectionObserver === "undefined") return;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const smallScreen = window.matchMedia("(max-width: 760px)");
+    let nearViewport = false;
+    const refresh = () => setVisible(
+      nearViewport && !reducedMotion.matches && !smallScreen.matches && document.visibilityState !== "hidden",
+    );
     const observer = new IntersectionObserver(
-      ([entry]) => setVisible(entry.isIntersecting),
+      ([entry]) => {
+        nearViewport = entry.isIntersecting;
+        refresh();
+      },
       { rootMargin: "80px" },
     );
     if (ref.current) observer.observe(ref.current);
-    return () => observer.disconnect();
+    reducedMotion.addEventListener("change", refresh);
+    smallScreen.addEventListener("change", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      observer.disconnect();
+      reducedMotion.removeEventListener("change", refresh);
+      smallScreen.removeEventListener("change", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
   }, []);
   return (
     <div className="sculpture-wrap" ref={ref}>
@@ -55,6 +68,8 @@ export default function Sculpture() {
       </div>
       <button
         className="sculpture-spin"
+        style={{ visibility: visible ? "visible" : "hidden" }}
+        disabled={!visible}
         onClick={() => setSpin((value) => value + 1)}
       >
         <RotateCw size={13} /> A little twist of joy

@@ -144,6 +144,107 @@ test("declared and streamed oversize request bodies are rejected", async () => {
   assert.equal(providerCalls(), 0);
 });
 
+test("stalled uploads time out and cancel the body without waiting on the source", async () => {
+  let cancelled = false;
+  const body = new ReadableStream({
+    cancel() {
+      cancelled = true;
+      return new Promise(() => {});
+    },
+  });
+  const pending = new Request(endpointUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+    duplex: "half",
+  });
+  const { handle, providerCalls } = makeEndpoint({ bodyTimeoutMs: 5 });
+  const response = await handle(pending);
+  assert.equal(response.status, 408);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(cancelled, true);
+  assert.equal(body.locked, false);
+  assert.equal(providerCalls(), 0);
+});
+
+test("aborting a pending upload releases its reader and prevents provider calls", async () => {
+  let cancelled = false;
+  const controller = new AbortController();
+  const body = new ReadableStream({ cancel() { cancelled = true; } });
+  const pending = new Request(endpointUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+    duplex: "half",
+    signal: controller.signal,
+  });
+  const { handle, providerCalls } = makeEndpoint();
+  const responsePromise = handle(pending);
+  controller.abort();
+  const response = await responsePromise;
+  assert.equal(response.status, 408);
+  assert.equal(cancelled, true);
+  assert.equal(body.locked, false);
+  assert.equal(providerCalls(), 0);
+});
+
+test("malformed UTF-8 is rejected instead of silently changing the host's brief", async () => {
+  const prefix = new TextEncoder().encode(JSON.stringify(EXAMPLE_BRIEF).replace("A spring wedding", "PLACEHOLDER"));
+  const marker = new TextEncoder().encode("PLACEHOLDER");
+  const start = prefix.findIndex((_, index) => marker.every((value, offset) => prefix[index + offset] === value));
+  const body = new Uint8Array([...prefix.slice(0, start), 0xc3, 0x28, ...prefix.slice(start + marker.length)]);
+  const { handle, providerCalls } = makeEndpoint();
+  const response = await handle(new Request(endpointUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body }));
+  assert.equal(response.status, 400);
+  assert.equal(providerCalls(), 0);
+});
+
+test("UTF-8 characters split across upload chunks remain intact", async () => {
+  const brief = { ...EXAMPLE_BRIEF, eventName: "A gathering 🌻" };
+  const bytes = new TextEncoder().encode(JSON.stringify(brief));
+  const body = new ReadableStream({ start(controller) {
+    for (const byte of bytes) controller.enqueue(Uint8Array.of(byte));
+    controller.close();
+  } });
+  let received;
+  const { handle } = makeEndpoint({ generate: async (input) => { received = input; return EXAMPLE_PROPOSAL; } });
+  const response = await handle(new Request(endpointUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body, duplex: "half" }));
+  assert.equal(response.status, 200);
+  assert.equal(received.eventName, brief.eventName);
+});
+
+test("request cancellation reaches an in-flight provider operation", async () => {
+  const controller = new AbortController();
+  let capturedSignal;
+  let providerStarted;
+  const started = new Promise((resolve) => { providerStarted = resolve; });
+  const { handle } = makeEndpoint({ generate: async (_input, options) => {
+    capturedSignal = options.signal;
+    providerStarted();
+    await new Promise((resolve) => capturedSignal.addEventListener("abort", resolve, { once: true }));
+    throw new DOMException("Cancelled", "AbortError");
+  } });
+  const pending = new Request(endpointUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(EXAMPLE_BRIEF), signal: controller.signal });
+  const responsePromise = handle(pending);
+  await started;
+  controller.abort();
+  const response = await responsePromise;
+  assert.equal(capturedSignal.aborted, true);
+  assert.equal(response.status, 504);
+});
+
+test("unsupported currencies and unknown model session references never produce a plan", async () => {
+  const { handle, providerCalls } = makeEndpoint();
+  assert.equal((await handle(request({ ...EXAMPLE_BRIEF, currency: "ZZZ" }))).status, 400);
+  assert.equal(providerCalls(), 0);
+  const proposal = structuredClone(EXAMPLE_PROPOSAL);
+  proposal.timeline[0].sessionId = "invented-session";
+  const { handle: invalidOutput } = makeEndpoint({ generate: async () => proposal });
+  const response = await invalidOutput(request(EXAMPLE_BRIEF));
+  assert.equal(response.status, 502);
+  assert.equal((await response.json()).result, undefined);
+});
+
 test("unsupported input is not reflected in an error response", async () => {
   const { handle, providerCalls } = makeEndpoint();
   const hostileValue = "<script>send private data</script>";

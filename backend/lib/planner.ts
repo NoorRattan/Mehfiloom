@@ -31,19 +31,41 @@ export const CATEGORY_LABELS: Record<(typeof BUDGET_CATEGORIES)[number], string>
 };
 
 const MAX_BUDGET_MINOR = 1_000_000_000_000;
+const SUPPORTED_CURRENCIES = new Set(Intl.supportedValuesOf("currency"));
+const currencyFormats = new Map<string, Intl.NumberFormat>();
+
+export function isSupportedCurrency(currency: string): boolean {
+  return SUPPORTED_CURRENCIES.has(currency);
+}
+
+export const currencySchema = z.string().trim().toUpperCase()
+  .refine(isSupportedCurrency, "Choose a supported ISO 4217 currency code, such as INR, USD, or JPY.");
+
+function currencyFormatter(currency: string): Intl.NumberFormat {
+  if (!isSupportedCurrency(currency)) {
+    throw new Error("Choose a supported ISO 4217 currency code, such as INR, USD, or JPY.");
+  }
+  // Only the finite supported currency set can enter this cache.
+  let formatter = currencyFormats.get(currency);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat("en", { style: "currency", currency });
+    currencyFormats.set(currency, formatter);
+  }
+  return formatter;
+}
 
 export const proposalSchema = z
   .object({
-    conceptTitle: z.string().min(3).max(80),
-    overview: z.string().min(30).max(500),
-    theme: z.string().min(3).max(100),
+    conceptTitle: z.string().trim().min(3).max(80),
+    overview: z.string().trim().min(30).max(500),
+    theme: z.string().trim().min(3).max(100),
     budgetAllocations: z
       .array(
         z
           .object({
             category: z.enum(BUDGET_CATEGORIES),
             weight: z.number().int().min(1).max(1000),
-            rationale: z.string().min(10).max(180),
+            rationale: z.string().trim().min(10).max(180),
           })
           .strict(),
       )
@@ -53,8 +75,8 @@ export const proposalSchema = z
       .array(
         z
           .object({
-            task: z.string().min(5).max(120),
-            timing: z.string().min(3).max(80),
+            task: z.string().trim().min(5).max(120),
+            timing: z.string().trim().min(3).max(80),
             priority: z.enum(["high", "medium", "low"]),
             sessionId: z.string().min(3).max(100).regex(/^[A-Za-z0-9:_-]+$/).nullable().optional(),
           })
@@ -66,8 +88,8 @@ export const proposalSchema = z
       .array(
         z
           .object({
-            category: z.string().min(3).max(60),
-            questions: z.array(z.string().min(5).max(150)).min(3).max(6),
+            category: z.string().trim().min(3).max(60),
+            questions: z.array(z.string().trim().min(5).max(150)).min(3).max(6),
           })
           .strict(),
       )
@@ -77,16 +99,16 @@ export const proposalSchema = z
       .array(
         z
           .object({
-            title: z.string().min(3).max(80),
-            whyItFits: z.string().min(10).max(180),
-            costNote: z.string().min(5).max(160),
+            title: z.string().trim().min(3).max(80),
+            whyItFits: z.string().trim().min(10).max(180),
+            costNote: z.string().trim().min(5).max(160),
           })
           .strict(),
       )
       .min(3)
       .max(5),
-    openQuestions: z.array(z.string().min(8).max(150)).min(2).max(5),
-    assumptions: z.array(z.string().min(8).max(150)).min(2).max(5),
+    openQuestions: z.array(z.string().trim().min(8).max(150)).min(2).max(5),
+    assumptions: z.array(z.string().trim().min(8).max(150)).min(2).max(5),
   })
   .strict();
 
@@ -126,7 +148,7 @@ export const eventBriefSchema = z
       guestCount: z.number().int().min(1).max(10000),
     }).strict()).max(12).default([]),
     budgetAmount: z.string().trim().min(1).max(24),
-    currency: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/),
+    currency: currencySchema,
     style: z.string().trim().max(500),
     mustHaves: z.string().trim().max(700),
   })
@@ -179,6 +201,16 @@ export const eventBriefSchema = z
 
 export type EventBrief = z.infer<typeof eventBriefSchema>;
 
+/** Validate references that the proposal's standalone shape cannot establish. */
+export function validateProposalForBrief(proposal: unknown, brief: EventBrief): PlannerProposal {
+  const parsed = proposalSchema.parse(proposal);
+  const sessionIds = new Set(brief.sessions.map((session) => session.id));
+  if (parsed.timeline.some((task) => task.sessionId != null && !sessionIds.has(task.sessionId))) {
+    throw new Error("The plan referred to an unknown event session. Please generate it again.");
+  }
+  return parsed;
+}
+
 export const generationRequestSchema = z.union([
   eventBriefSchema.transform((brief) => ({ brief })),
   z.object({
@@ -212,11 +244,7 @@ function isValidCalendarDate(value: string): boolean {
 }
 
 export function currencyDigits(currency: string): number {
-  if (!/^[A-Z]{3}$/.test(currency)) throw new Error("Use a three-letter currency code.");
-  return new Intl.NumberFormat("en", {
-    style: "currency",
-    currency,
-  }).resolvedOptions().maximumFractionDigits ?? 2;
+  return currencyFormatter(currency).resolvedOptions().maximumFractionDigits ?? 2;
 }
 
 export function parseBudgetMinor(amount: string, currency: string, allowZero = false): number {
@@ -245,12 +273,7 @@ export function parseBudgetMinor(amount: string, currency: string, allowZero = f
 export function formatMoney(amountMinor: number, currency: string): string {
   const digits = currencyDigits(currency);
   const major = amountMinor / 10 ** digits;
-  return new Intl.NumberFormat("en", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  }).format(major);
+  return currencyFormatter(currency).format(major);
 }
 
 export function buildPlanResult(

@@ -6,6 +6,8 @@ import {
   expectedGuestsForCostItem,
   forecastCostItem,
   reidentifyPlan,
+  parsePlanDocument,
+  WORKSPACE_VERSION,
   savedPlanSchema,
   validateSavedPlan,
 } from "../lib/plan-store.ts";
@@ -597,4 +599,32 @@ test("legacy saved plans receive safe revision defaults and conservatively prese
   assert.equal(migrated.undoRevision, null);
   assert.deepEqual(migrated.manualProposalFields, ["conceptTitle", "overview", "theme"]);
   assert.deepEqual(migrated.manualTaskIds, legacy.tasks.map((task) => task.id));
+});
+
+
+test("import validates undo snapshot references and budget caps before allowing restore", () => {
+  const current = makeEditedPlan();
+  const accepted = acceptPlanRevision(current, current, makeCandidate(current), "Keep the same accessible entrance and revise the plan.", ACCEPTED_AT);
+  const mutations = [
+    {
+      damage: (snapshot) => { snapshot.tasks[0].dependencyIds = ["missing-task"]; },
+      message: /Task dependencies must reference a task/,
+    },
+    {
+      damage: (snapshot) => { snapshot.budget.capMinor += 1; },
+      message: /saved budget cap does not match/,
+    },
+    {
+      damage: (snapshot) => { snapshot.budget.items[0].vendorId = "missing-vendor"; },
+      message: /Cost items must reference a vendor/,
+    },
+  ];
+  for (const { damage, message } of mutations) {
+    const imported = structuredClone(accepted);
+    damage(imported.undoRevision.snapshot);
+    assert.throws(() => parsePlanDocument(JSON.stringify({
+      format: "mehfiloom-plan", schemaVersion: WORKSPACE_VERSION, plan: imported,
+    })), message);
+  }
+  assert.deepEqual(validateSavedPlan(accepted), accepted, "valid snapshots retain all host work");
 });
