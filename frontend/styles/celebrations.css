@@ -1,0 +1,781 @@
+/* Each celebration keeps its own palette, proportions, and visual rhythm. */
+.event-page {
+  overflow: clip;
+  background: var(--paper);
+  color: var(--ink);
+}
+.theme-wedding {
+  --paper: #f3ede5;
+  --ink: #512c36;
+  --accent: #8f4b5c;
+  --muted: #71595f;
+  --line: #dfd1cd;
+  --soft: #e9deda;
+}
+.theme-birthday {
+  --paper: #e1d9f0;
+  --ink: #342841;
+  --accent: #644b83;
+  --muted: #62546f;
+  --line: #c9bdd8;
+  --soft: #d6cbe9;
+  --chart-0: #644b83;
+  --chart-1: #a988bb;
+  --chart-2: #c4bb65;
+  --chart-3: #e4df99;
+}
+.theme-community {
+  --paper: #e9e9db;
+  --ink: #324d3b;
+  --accent: #4d6b49;
+  --muted: #55624e;
+  --line: #cbd0bd;
+  --soft: #dce0ce;
+  --chart-0: #3e5c42;
+  --chart-1: #6f875d;
+  --chart-2: #a2a96b;
+  --chart-3: #c8be8b;
+}
+.event-nav {
+  width: min(1440px, calc(100% - 112px));
+  margin: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 60px;
+  gap: 22px;
+  border-bottom: 1px solid var(--line);
+}
+.event-nav-label {
+  display: flex;
+  gap: 20px;
+  font-size: 8px;
+  letter-spacing: 1.6px;
+  font-weight: 500;
+}
+.event-nav-label > span {
+  font-size: 17px;
+  line-height: 1;
+}
+.event-nav > div {
+  display: flex;
+  gap: 24px;
+}
+.event-nav > div a {
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-block: 20px;
+  color: var(--muted);
+  position: relative;
+}
+.event-nav > div a.selected {
+  color: var(--ink);
+}
+.event-nav > div a.selected::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+}
+.event-nav-note {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 15px;
+  color: var(--muted);
+}
+.wedding-hero {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  min-height: 690px;
+  gap: 70px;
+  align-items: center;
+  padding-block: 62px 75px;
+}
+.theme-wedding.event-page {
+  background: #49242f;
+  color: #f4e9db;
+}
+.theme-wedding.event-page .site-header,
+.theme-wedding.event-page .event-nav {
+  border-color: #80505b;
+}
+.theme-wedding.event-page .brand > .flower,
+.theme-wedding.event-page .brand-dot {
+  color: #cc9b8e;
+}
+.theme-wedding.event-page .button-ink {
+  background: #f4e9db;
+  color: #49242f;
+}
+.theme-wedding.event-page .event-nav {
+  --muted: #d3b9b9;
+  --ink: #f4e9db;
+  --accent: #d8b6a1;
+}
+.wedding-hero-copy h1 {
+  font-family: var(--serif);
+  font-size: clamp(82px, 8.4vw, 120px);
+  line-height: 0.95;
+  letter-spacing: -3px;
+  margin: 27px 0;
+}
+.wedding-hero-copy h1 em {
+  display: block;
+  color: #d8b7a6;
+}
+.wedding-hero-copy > p:not(.eyebrow) {
+  font-size: 12px;
+  line-height: 1.9;
+  color: #d0b7b7;
+}
+.wedding-hero-copy .eyebrow {
+  font-size: 8px;
+  color: #d9b7aa;
+}
+.wedding-hero-copy .hero-actions {
+  gap: 20px;
+}
+.wedding-hero-copy .text-link {
+  font-size: 10px;
+}
+.wedding-smallnote {
+  font-family: var(--serif);
+  font-size: 16px;
+  font-style: italic;
+  color: #be9f9d;
+  display: block;
+  margin-top: 28px;
+}
+.wedding-art {
+  height: 525px;
+  position: relative;
+}
+.wedding-arch {
+  position: absolute;
+  inset: 0 15px 15px 0;
+  border-radius: 230px 230px 3px 3px;
+  overflow: hidden;
+  outline: 1px solid #d9b6a33d;
+  outline-offset: 13px;
+}
+.wedding-arch img {
+  object-position: 42% 50%;
+  filter: saturate(0.8);
+}
+.wedding-sideword {
+  position: absolute;
+  font-size: 7px;
+  letter-spacing: 2px;
+  right: -30px;
+  top: 110px;
+  writing-mode: vertical-rl;
+  color: #bc9290;
+}
+.wedding-art-seal {
+  position: absolute;
+  bottom: -12px;
+  left: -40px;
+  height: 125px;
+  width: 125px;
+  background: #e5cbb4;
+  color: #65333a;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  transform: rotate(-12deg);
+}
+.wedding-art-seal .flower {
+  width: 24px;
+  height: 24px;
+  margin-bottom: 7px;
+}
+.wedding-art-seal .flower circle {
+  fill: #e5cbb4;
+}
+.wedding-art-seal span {
+  font-size: 11px;
+  text-align: center;
+}
+.wedding-art-seal em {
+  font-family: var(--serif);
+  font-size: 32px;
+  line-height: 0.8;
+}
+.wedding-handwriting {
+  position: absolute;
+  right: 11px;
+  bottom: -39px;
+  font-size: 20px;
+  color: #d3b5a5;
+  transform: rotate(-7deg);
+}
+.wedding-ribbon {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  gap: 25px;
+  padding: 24px 50px;
+  background: #d8b6a1;
+  color: #5b3339;
+}
+.wedding-ribbon > span {
+  font-size: 9px;
+  letter-spacing: 2px;
+}
+.wedding-ribbon > .flower {
+  width: 23px;
+  height: 23px;
+}
+.wedding-ribbon > .flower circle {
+  fill: #d8b6a1;
+}
+.event-editorial {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 100px;
+  align-items: center;
+}
+.editorial-photo {
+  height: 570px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 2px;
+}
+.editorial-photo img {
+  filter: saturate(0.7);
+}
+.editorial-photo-label {
+  position: absolute;
+  bottom: 25px;
+  left: 25px;
+  right: 25px;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 26px;
+  background: #f3e9dcd9;
+  color: #58383c;
+  padding: 12px 16px;
+}
+.editorial-copy h2 {
+  font-family: var(--serif);
+  font-size: 62px;
+  line-height: 1;
+  margin: 21px 0;
+  letter-spacing: -1px;
+}
+.editorial-copy > p:not(.eyebrow) {
+  font-size: 12px;
+  color: #ceb8b7;
+  line-height: 1.9;
+  max-width: 330px;
+}
+.editorial-copy .eyebrow {
+  font-size: 8px;
+  color: #c5a498;
+}
+.editorial-lines {
+  margin: 30px 0 22px;
+}
+.editorial-lines > div {
+  padding: 17px 0;
+  border-top: 1px solid #79515c;
+  display: flex;
+  gap: 22px;
+}
+.editorial-lines > div > span {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 21px;
+  color: #d8b7a6;
+}
+.editorial-lines p {
+  font-size: 10px;
+  line-height: 1.8;
+  color: #c9b1b1;
+}
+.editorial-lines strong {
+  font-weight: 400;
+  display: block;
+  color: #f4e9db;
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+.event-assistant-band {
+  background: #e9d8ca;
+  color: #572e38;
+  padding: 60px 66px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 60px;
+  position: relative;
+  overflow: hidden;
+}
+.event-assistant-band h2 {
+  font-family: var(--serif);
+  font-size: 53px;
+  line-height: 1.06;
+  margin: 21px 0;
+  letter-spacing: -1px;
+}
+.event-assistant-band p:not(.eyebrow) {
+  font-size: 11px;
+  line-height: 1.9;
+  color: #705050;
+  margin-bottom: 23px;
+}
+.theme-wedding.event-page .event-assistant-band .button-ink {
+  background: #572e38;
+  color: #f3e8db;
+}
+.band-flower {
+  width: 210px;
+  height: 210px;
+  margin-right: -30px;
+  color: #c1a29b;
+  transform: rotate(-20deg);
+}
+.band-flower circle {
+  fill: #e9d8ca;
+}
+.event-endnote {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding-block: 0 42px;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 21px;
+}
+.event-endnote a {
+  margin-left: auto;
+}
+.event-endnote svg.rotate-180 {
+  transform: rotate(180deg);
+}
+.birthday-hero {
+  padding-top: 37px;
+}
+.birthday-kicker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 8px;
+  letter-spacing: 1.6px;
+}
+.birthday-kicker .eyebrow {
+  font-size: 9px;
+}
+.birthday-hero-grid {
+  display: grid;
+  grid-template-columns: 1.08fr 1fr;
+  gap: 50px;
+  align-items: center;
+  padding: 45px 0 68px;
+}
+.birthday-copy h1 {
+  font-family: var(--font-dm-sans);
+  font-weight: 700;
+  font-size: clamp(90px, 10.5vw, 154px);
+  letter-spacing: -9px;
+  line-height: 0.88;
+  position: relative;
+  margin-bottom: 30px;
+}
+.birthday-copy h1 > span {
+  color: #73568e;
+}
+.birthday-copy h1 .flower {
+  position: absolute;
+  width: 76px;
+  height: 76px;
+  right: 0;
+  top: 10px;
+  color: #b25233;
+  transform: rotate(-15deg);
+}
+.birthday-copy h1 .flower circle {
+  fill: #e1d9f0;
+}
+.birthday-copy > p {
+  font-size: 13px;
+  line-height: 1.9;
+  margin-bottom: 27px;
+}
+.birthday-copy > .text-link {
+  display: flex;
+  margin-top: 21px;
+  font-size: 11px;
+}
+.birthday-art {
+  position: relative;
+  height: 490px;
+}
+.birthday-photo {
+  position: absolute;
+  inset: 15px 0 5px;
+  border-radius: 200px 200px 8px 8px;
+  overflow: hidden;
+  transform: rotate(5deg);
+  border: 8px solid #eee9d3;
+  box-shadow: 9px 9px 0 #342841;
+}
+.birthday-photo img {
+  object-position: 47% 18%;
+  filter: saturate(0.85);
+}
+.birthday-photo-note {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  padding: 14px;
+  background: #eee9d3;
+  text-align: center;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 27px;
+}
+.birthday-sticker {
+  position: absolute;
+  top: -15px;
+  left: -21px;
+  width: 120px;
+  height: 120px;
+  background: #e7eb9b;
+  display: grid;
+  align-content: center;
+  text-align: center;
+  border-radius: 50%;
+  border: 1px solid #342841;
+  transform: rotate(-15deg);
+  font-size: 18px;
+  line-height: 1.05;
+  font-weight: 600;
+}
+.birthday-sticker em {
+  font-family: var(--serif);
+  font-size: 30px;
+  font-weight: 400;
+}
+.birthday-spark {
+  position: absolute;
+  right: -32px;
+  bottom: 0;
+  font-size: 95px;
+  line-height: 1;
+  color: #bf5b3d;
+  transform: rotate(-10deg);
+}
+.birthday-handwriting {
+  position: absolute;
+  bottom: -31px;
+  left: -30px;
+  font-size: 26px;
+  transform: rotate(-10deg);
+}
+.birthday-hero-bottom {
+  border-top: 1px solid #b9abca;
+  display: flex;
+  justify-content: space-between;
+  padding: 22px 0 28px;
+  font-size: 8px;
+  letter-spacing: 1.7px;
+}
+.birthday-manifesto {
+  background: #ecebaf;
+  padding: 85px 0;
+  border-block: 1px solid #342841;
+}
+.birthday-manifesto h2 {
+  font-family: var(--font-dm-sans);
+  font-size: 65px;
+  font-weight: 600;
+  letter-spacing: -3px;
+  line-height: 1.06;
+  margin-top: 23px;
+}
+.birthday-manifesto h2 em {
+  font-family: var(--serif);
+  font-size: 1.25em;
+  font-weight: 400;
+}
+.birthday-detail-lines {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 45px;
+  margin-top: 65px;
+}
+.birthday-detail-lines > div {
+  border-top: 1px solid #b6b47b;
+  padding-top: 21px;
+}
+.birthday-detail-lines .eyebrow {
+  font-size: 8px;
+}
+.birthday-detail-lines h3 {
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.6px;
+  margin-top: 24px;
+  margin-bottom: 13px;
+}
+.birthday-detail-lines p {
+  font-size: 11px;
+  line-height: 1.9;
+  max-width: 280px;
+  color: #605f42;
+}
+.birthday-assistant {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 90px;
+  align-items: center;
+}
+.birthday-mini-tag {
+  padding: 8px 12px;
+  border: 1px solid #a99bbb;
+  font-size: 8px;
+  letter-spacing: 1.3px;
+  border-radius: 20px;
+}
+.birthday-assistant h2 {
+  font-size: 62px;
+  font-weight: 600;
+  letter-spacing: -2.5px;
+  line-height: 1.05;
+  margin: 30px 0 23px;
+}
+.birthday-assistant h2 em {
+  font-family: var(--serif);
+  font-size: 1.2em;
+}
+.birthday-assistant p {
+  font-size: 12px;
+  line-height: 1.9;
+  color: var(--muted);
+  margin-bottom: 27px;
+}
+.birthday-idea-poster {
+  background: #795792;
+  color: #efebc0;
+  padding: 33px 24px;
+  position: relative;
+  transform: rotate(5deg);
+  text-align: center;
+  width: 340px;
+  box-shadow: 9px 9px 0 #c8bad6;
+}
+.birthday-idea-poster > span:first-child {
+  font-size: 9px;
+  letter-spacing: 2px;
+  display: block;
+  line-height: 1.6;
+}
+.birthday-idea-poster .flower {
+  width: 90px;
+  height: 90px;
+  margin: 20px auto;
+  color: #e8e9a5;
+}
+.birthday-idea-poster .flower circle {
+  fill: #795792;
+}
+.birthday-idea-poster p {
+  font-family: var(--serif);
+  font-size: 60px;
+  line-height: 0.85;
+  color: inherit;
+  margin-bottom: 23px;
+  letter-spacing: -1px;
+}
+.birthday-idea-poster > span:last-child {
+  font-size: 6px;
+  letter-spacing: 1.5px;
+}
+.community-hero {
+  padding-top: 35px;
+}
+.community-hero-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 8px;
+  letter-spacing: 1.5px;
+}
+.community-hero-top .eyebrow {
+  font-size: 9px;
+}
+.community-headline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 80px;
+  padding: 43px 0 53px;
+}
+.community-headline h1 {
+  font-family: var(--serif);
+  font-size: clamp(80px, 9.5vw, 138px);
+  line-height: 0.91;
+  letter-spacing: -4px;
+}
+.community-headline h1 em {
+  color: #63724d;
+}
+.community-hero-aside {
+  flex-shrink: 0;
+  width: 300px;
+}
+.community-hero-aside > p {
+  font-size: 12px;
+  line-height: 1.9;
+  margin: 15px 0 22px;
+  color: var(--muted);
+}
+.community-emblem {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+.community-emblem .flower {
+  width: 36px;
+  height: 36px;
+  color: #7c8957;
+}
+.community-emblem > span {
+  font-size: 7px;
+  letter-spacing: 1.8px;
+}
+.community-wide-photo {
+  height: 365px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 0 130px 0 0;
+}
+.community-wide-photo img {
+  object-position: center 20%;
+  filter: saturate(0.7);
+}
+.community-wide-photo::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(transparent 60%, #203f2766);
+}
+.community-wide-photo > div {
+  position: absolute;
+  z-index: 2;
+  bottom: 30px;
+  left: 30px;
+  right: 30px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: #f2edda;
+}
+.community-photo-caption {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 16px;
+  font-size: 7px;
+  letter-spacing: 1.5px;
+  color: var(--muted);
+}
+.community-purpose {
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  gap: 100px;
+}
+.community-purpose h2 {
+  font-family: var(--serif);
+  font-size: 63px;
+  line-height: 1.02;
+  letter-spacing: -1px;
+  margin: 22px 0;
+}
+.community-purpose > div > p:not(.eyebrow) {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.9;
+  max-width: 355px;
+}
+.community-purpose-list > div {
+  display: flex;
+  gap: 20px;
+  padding: 23px 0;
+  border-bottom: 1px solid #c6cdb8;
+}
+.community-purpose-list > div:first-child {
+  padding-top: 0;
+}
+.community-purpose-list > div > span {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 21px;
+  color: var(--accent);
+  padding-top: 6px;
+}
+.community-purpose-list h3 {
+  font-family: var(--serif);
+  font-size: 31px;
+  margin-bottom: 10px;
+}
+.community-purpose-list p {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.9;
+  max-width: 300px;
+}
+.community-purpose-list svg {
+  margin-left: auto;
+  margin-top: 10px;
+  flex-shrink: 0;
+  color: #829069;
+}
+.community-invitation {
+  background: #334e3d;
+  color: #eeeeda;
+  padding-block: 80px;
+  overflow: hidden;
+}
+.community-invitation .wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.community-invitation .eyebrow {
+  color: #bdc3a1;
+  font-size: 8px;
+}
+.community-invitation h2 {
+  font-family: var(--serif);
+  font-size: 64px;
+  line-height: 1.02;
+  margin: 25px 0;
+  letter-spacing: -1px;
+}
+.community-invitation p:not(.eyebrow) {
+  font-size: 11px;
+  color: #b8c1ab;
+  line-height: 1.9;
+  margin-bottom: 26px;
+}
+.community-invitation-flower {
+  width: 235px;
+  height: 235px;
+  color: #a6b18a;
+  transform: rotate(12deg);
+  margin-right: -50px;
+}
+.community-invitation-flower circle {
+  fill: #334e3d;
+}

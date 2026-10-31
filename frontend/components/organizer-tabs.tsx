@@ -22,11 +22,17 @@ export default function OrganizerTabs({
 }) {
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
   return (
-    <div className="workspace-tabs" role="tablist" aria-label="Organizer sections">
+    <div
+      className="workspace-tabs"
+      role="tablist"
+      aria-label="Organizer sections"
+    >
       {sections.map((section, index) => (
         <button
           key={section.id}
-          ref={(button) => { buttons.current[index] = button; }}
+          ref={(button) => {
+            buttons.current[index] = button;
+          }}
           id={`${kind}-tab-${section.id}`}
           role="tab"
           aria-selected={selected === section.id}
@@ -37,11 +43,20 @@ export default function OrganizerTabs({
           onKeyDown={(event) => {
             let next: number;
             switch (event.key) {
-              case "ArrowRight": next = (index + 1) % sections.length; break;
-              case "ArrowLeft": next = (index + sections.length - 1) % sections.length; break;
-              case "Home": next = 0; break;
-              case "End": next = sections.length - 1; break;
-              default: return;
+              case "ArrowRight":
+                next = (index + 1) % sections.length;
+                break;
+              case "ArrowLeft":
+                next = (index + sections.length - 1) % sections.length;
+                break;
+              case "Home":
+                next = 0;
+                break;
+              case "End":
+                next = sections.length - 1;
+                break;
+              default:
+                return;
             }
             event.preventDefault();
             onSelect(sections[next].id);

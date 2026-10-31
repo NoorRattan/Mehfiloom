@@ -1,0 +1,244 @@
+@theme inline {
+  --font-sans: var(--font-dm-sans);
+}
+:root {
+  --paper: #f4f0e8;
+  --ink: #292b25;
+  --muted: #626358;
+  --accent: #ba5135;
+  --line: #dad6cb;
+  --soft: #eae5d9;
+  --serif: var(--font-serif), Georgia, serif;
+  --chart-0: #75444d;
+  --chart-1: #ba7053;
+  --chart-2: #c7a47a;
+  --chart-3: #d7c9aa;
+  --chart-4: #78836a;
+  --chart-5: #a6aa8a;
+  --chart-6: #a28987;
+  --chart-7: #d4b6a5;
+}
+* {
+  box-sizing: border-box;
+}
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 25px;
+}
+body {
+  margin: 0;
+  font-family: var(--font-dm-sans), Arial, sans-serif;
+  color: var(--ink);
+  background: var(--paper);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+button,
+a,
+input,
+textarea,
+select,
+summary {
+  -webkit-tap-highlight-color: transparent;
+}
+button,
+a {
+  touch-action: manipulation;
+}
+button {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+a {
+  color: inherit;
+  text-decoration: none;
+}
+button {
+  color: inherit;
+}
+input,
+select,
+textarea {
+  min-width: 0;
+}
+textarea {
+  resize: vertical;
+}
+button:focus-visible,
+a:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 5px;
+}
+[role="tabpanel"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 5px;
+}
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  outline-offset: 2px;
+}
+::selection {
+  background: #dcc6ab;
+  color: #292b25;
+}
+img {
+  object-fit: cover;
+}
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+h1,
+h2,
+h3 {
+  font-weight: 400;
+}
+em {
+  font-weight: 400;
+}
+fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.wrap {
+  width: min(1280px, calc(100% - 112px));
+  margin-inline: auto;
+}
+.section-space {
+  padding-block: 102px;
+}
+.eyebrow {
+  font-size: 10px;
+  line-height: 1.6;
+  font-weight: 600;
+  letter-spacing: 1.65px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.flower {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+}
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  min-height: 52px;
+  padding: 15px 23px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  transition:
+    background 0.25s,
+    box-shadow 0.25s,
+    transform 0.25s;
+}
+.button:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 18px #292b2511;
+}
+.button svg {
+  flex-shrink: 0;
+  transition: transform 0.3s;
+}
+.button:hover svg {
+  transform: translate(2px, -2px);
+}
+.button-small {
+  min-height: 41px;
+  padding: 10px 16px;
+  font-size: 11px;
+  gap: 19px;
+}
+.button-ink {
+  color: var(--paper);
+  background: var(--ink);
+}
+.button-accent {
+  color: #fff5e9;
+  background: var(--accent);
+}
+.button-cream {
+  color: #472d29;
+  background: #f5eddf;
+}
+.button-outline {
+  background: transparent;
+  border-color: var(--line);
+}
+.button-event {
+  background: var(--accent);
+  color: #fff7ed;
+}
+.button-birthday {
+  background: #ebee9c;
+  color: #302445;
+  border-color: #302445;
+  box-shadow: 4px 4px 0 #302445;
+  border-radius: 0;
+}
+.button-birthday:hover {
+  box-shadow: 6px 6px 0 #302445;
+}
+.button-green {
+  background: #314d3a;
+  color: #f4f1db;
+  border-radius: 0;
+}
+.text-link {
+  font-size: 11px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding-block: 5px;
+  background: none;
+  border: 0;
+  transition: gap 0.25s;
+}
+.text-link:hover {
+  gap: 18px;
+}
+.magnetic {
+  display: inline-block;
+}
+.handwritten {
+  font-family: var(--serif);
+  font-size: 22px;
+  font-style: italic;
+  line-height: 1.05;
+}
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 15px;
+  z-index: 999;
+  background: var(--ink);
+  color: var(--paper);
+  padding: 12px 18px;
+  transform: translateY(-150%);
+}
+.skip-link:focus {
+  transform: translateY(0);
+}

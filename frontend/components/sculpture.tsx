@@ -34,9 +34,13 @@ export default function Sculpture() {
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     const smallScreen = window.matchMedia("(max-width: 760px)");
     let nearViewport = false;
-    const refresh = () => setVisible(
-      nearViewport && !reducedMotion.matches && !smallScreen.matches && document.visibilityState !== "hidden",
-    );
+    const refresh = () =>
+      setVisible(
+        nearViewport &&
+          !reducedMotion.matches &&
+          !smallScreen.matches &&
+          document.visibilityState !== "hidden",
+      );
     const observer = new IntersectionObserver(
       ([entry]) => {
         nearViewport = entry.isIntersecting;

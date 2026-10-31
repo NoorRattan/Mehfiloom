@@ -1,0 +1,14 @@
+{
+  "name": "@mehfiloom/minimatch-compat",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Callable CommonJS bridge to patched upstream minimatch for lint plugins",
+  "main": "index.cjs",
+  "exports": {
+    "import": "./index.mjs",
+    "require": "./index.cjs"
+  },
+  "dependencies": {
+    "minimatch-secure": "npm:minimatch@11.0.3"
+  }
+}

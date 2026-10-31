@@ -1,12 +1,58 @@
-import { describe, expect, it } from "vitest";
-import { exportWorkspaceText } from "../lib/plan-export";
+import { describe, expect, it, vi } from "vitest";
+import { downloadPlanText, exportWorkspaceText } from "../lib/plan-export";
 import { newBrief } from "../lib/events";
-import { buildPlanResult, getEventTemplateProposal } from "../../backend/lib/planner";
+import {
+  buildPlanResult,
+  getEventTemplateProposal,
+} from "../../backend/lib/planner";
 import type { Workspace } from "../lib/workspace-store";
 
 describe("portable planning export", () => {
+  it.each([false, true])(
+    "releases the browser download URL and link when click fails=%s",
+    (blocked) => {
+      vi.useFakeTimers();
+      const create = vi.fn(() => "blob:plan-download");
+      const revoke = vi.fn();
+      vi.stubGlobal(
+        "URL",
+        class extends URL {
+          static createObjectURL = create;
+          static revokeObjectURL = revoke;
+        },
+      );
+      vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(
+        function (this: HTMLAnchorElement) {
+          expect(this.isConnected).toBe(true);
+          expect(this.download).toBe("my-plan.txt");
+          if (blocked) throw new Error("Download blocked");
+        },
+      );
+      try {
+        if (blocked)
+          expect(() =>
+            downloadPlanText("Portable planning draft", "my-plan.txt"),
+          ).toThrow("Download blocked");
+        else downloadPlanText("Portable planning draft", "my-plan.txt");
+        expect(document.querySelector("a[download]")).not.toBeInTheDocument();
+        expect(create).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "text/plain;charset=utf-8" }),
+        );
+        expect(revoke).not.toHaveBeenCalled();
+        vi.runAllTimers();
+        expect(revoke).toHaveBeenCalledExactlyOnceWith("blob:plan-download");
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it("retains the complete AI proposal, caveats, revised brief and host work", () => {
-    const result = buildPlanResult(getEventTemplateProposal("wedding"), "USD", 10000);
+    const result = buildPlanResult(
+      getEventTemplateProposal("wedding"),
+      "USD",
+      10000,
+    );
     const state: Workspace = {
       brief: {
         ...newBrief("wedding"),
@@ -23,7 +69,11 @@ describe("portable planning export", () => {
       vendorNotes: { Venue: "Ramp confirmed in writing" },
       revisionRequests: ["Keep the quiet space"],
     };
-    const text = exportWorkspaceText(state, [{ title: "Confirm step-free entry", timing: "Tomorrow" }], "₹20,000.00");
+    const text = exportWorkspaceText(
+      state,
+      [{ title: "Confirm step-free entry", timing: "Tomorrow" }],
+      "₹20,000.00",
+    );
     expect(text).toContain("Current budget: ₹20,000.00");
     expect(text).toContain("BUDGET ALLOCATION (USD)");
     expect(text).toContain("Total allocated: $100");
@@ -40,14 +90,24 @@ describe("portable planning export", () => {
       result.proposal.vendorChecklist[0].questions[0],
       result.proposal.openQuestions[0],
       result.proposal.assumptions[0],
-    ]) expect(text).toContain(value);
+    ])
+      expect(text).toContain(value);
   });
 
   it("exports an unfinished draft without inventing an AI plan", () => {
-    const text = exportWorkspaceText({
-      brief: newBrief("community"), checked: [], customTasks: [], vendorNotes: {},
-      result: null, resultSource: null, revisionRequests: [],
-    }, [], "Set your budget");
+    const text = exportWorkspaceText(
+      {
+        brief: newBrief("community"),
+        checked: [],
+        customTasks: [],
+        vendorNotes: {},
+        result: null,
+        resultSource: null,
+        revisionRequests: [],
+      },
+      [],
+      "Set your budget",
+    );
     expect(text).toContain("My community gathering");
     expect(text).toContain("Date: To be decided");
     expect(text).not.toContain("AI PLANNING DRAFT");

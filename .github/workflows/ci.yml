@@ -44,8 +44,11 @@ jobs:
       - name: Screen reachable history for credentials
         run: npm run check:secrets
 
-      - name: Run unit and integration tests
-        run: npm test
+      - name: Run unit and integration tests with coverage gates
+        run: npm run test:coverage
+
+      - name: Check formatting
+        run: npm run format:check
 
       - name: Lint
         run: npm run lint

@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { dateInTimeZone, isValidIanaTimeZone } from "../lib/schedule.ts";
+import {
+  dateInTimeZone,
+  isValidIanaTimeZone,
+  resolveZonedDateTime,
+} from "../lib/schedule.ts";
 
 test("case variants reuse a native formatter instead of retaining each spelling", (t) => {
   const Original = Intl.DateTimeFormat;
@@ -42,4 +46,22 @@ test("many valid zones evict old formatters while keeping recent ones reusable",
     "old formatter was released, not retained forever",
   );
   assert.equal(isValidIanaTimeZone("not-a-zone"), false);
+});
+
+test("named zones keep historical second precision and reject bare fixed offsets", () => {
+  const result = resolveZonedDateTime("1900-01-01", "12:00", "Europe/Paris");
+  assert.equal(result.status, "unique");
+  assert.equal(result.instant, "1900-01-01T11:50:39.000Z");
+  for (const offset of ["+01:00", "-0330", "+01"]) {
+    assert.equal(isValidIanaTimeZone(offset), false);
+    assert.equal(
+      resolveZonedDateTime("2027-01-01", "12:00", offset).status,
+      "invalid",
+    );
+  }
+  assert.equal(
+    isValidIanaTimeZone("Etc/GMT+5"),
+    true,
+    "named IANA fixed zones remain valid",
+  );
 });

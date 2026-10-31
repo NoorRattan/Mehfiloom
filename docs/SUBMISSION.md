@@ -12,14 +12,14 @@ The brief is to create a GenAI assistant for weddings, birthdays and community e
 
 ## Evidence against the judging parameters
 
-| Parameter         | Implementation                                                                                                                                                                                          | How to assess it                                                                                  |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Code quality      | Strict TypeScript, shared typed workspace behavior, Server Component pages, thin framework API adapter, separated provider/domain/HTTP modules                                                          | Run lint and type checks; inspect `frontend/components/`, `backend/lib/`                          |
-| Security          | Server-only key, bounded streamed input, strict schemas, ingress throttling, bounded caches, no-store responses, escaped text, generic provider errors, read-only pinned CI                             | Run endpoint/resource regression tests and audits; read `SECURITY.md`                             |
-| Efficiency        | Prerendered experience pages, local fonts, responsive image sizing, lazy desktop WebGL, fallback artwork, bounded provider calls/output/timeout                                                         | Inspect build output and network behavior; do not infer a Lighthouse score                        |
-| Testing           | Backend contract/property checks, frontend DOM regressions and production browser workflows; CI repeats tests, lint, types, build and both audits                                                        | Run `npm run check`, then `npm run test:browser`; examine the latest GitHub Actions run             |
-| Accessibility     | Keyboard organizer tabs, skip link, labelled controls, focus indicators, native checkboxes/details, announced status/errors, progress and budget semantics, live reduced-motion support                 | Real-browser axe checks include contrast; browser tests exercise mobile layout and keyboard paths  |
-| Problem alignment | Three event identities; personal AI concept, exact budget allocation, timeline, vendor questions, ideas, editable organizer, isolated drafts and export                                                 | Follow the demo journey below                                                                     |
+| Parameter         | Implementation                                                                                                                                                                          | How to assess it                                                                                  |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Code quality      | Strict TypeScript, shared typed workspace behavior, Server Component pages, thin framework API adapter, separated provider/domain/HTTP modules                                          | Run lint and type checks; inspect `frontend/components/`, `backend/lib/`                          |
+| Security          | Server-only key, bounded streamed input, strict schemas, ingress throttling, bounded caches, no-store responses, escaped text, generic provider errors, read-only pinned CI             | Run endpoint/resource regression tests and audits; read `SECURITY.md`                             |
+| Efficiency        | Prerendered experience pages, local fonts, responsive image sizing, lazy desktop WebGL, fallback artwork, bounded provider calls/output/timeout                                         | Inspect build output and network behavior; do not infer a Lighthouse score                        |
+| Testing           | Backend contract/property checks, frontend DOM regressions and production browser workflows; CI repeats tests, lint, types, build and both audits                                       | Run `npm run check`, then `npm run test:browser`; examine the latest GitHub Actions run           |
+| Accessibility     | Keyboard organizer tabs, skip link, labelled controls, focus indicators, native checkboxes/details, announced status/errors, progress and budget semantics, live reduced-motion support | Real-browser axe checks include contrast; browser tests exercise mobile layout and keyboard paths |
+| Problem alignment | Three event identities; personal AI concept, exact budget allocation, timeline, vendor questions, ideas, editable organizer, isolated drafts and export                                 | Follow the demo journey below                                                                     |
 
 ## Five-minute demonstration
 
@@ -30,6 +30,17 @@ The brief is to create a GenAI assistant for weddings, birthdays and community e
 5. **Show isolation.** Open Birthday and Community organizers. They retain their own briefs and palettes. Refresh a page to demonstrate browser persistence. AI generation is subject to provider and per-process request limits; avoid repeated demonstrations that exhaust quota.
 
 ## Verification record
+
+At the October 31, 2026 final local review:
+
+- 117 backend, 81 frontend and five tooling tests passed (203 total). The tooling tests exercise both legacy/current module APIs and actual import-boundary/accessibility lint violations.
+- Backend native V8 coverage measured 96.84% lines, 86.54% branches and 96.24% functions. Frontend V8 coverage measured 93.01% lines, 87.43% branches and 91.20% functions. All frontend components and libraries are included, including the decorative renderer; no source exclusions raise these metrics.
+- CI coverage gates require backend 95% lines/functions and 85% branches; frontend 90% lines/statements/functions and 85% branches. Formatting is also blocking.
+- The production Chromium desktop and mobile run passed 39 applicable tests. The desktop invocation of a mobile-only test was intentionally skipped. Added cases cover cancellation and generated plans at 320 CSS pixels with maximum-length unbroken headings, tasks and vendor labels. Firefox is configured for Linux CI; use the latest hosted run for its result.
+- A clean locked `npm ci`, formatting, lint, strict types, production build and credential-pattern screening passed. Both full and production dependency audits reported zero vulnerabilities after the documented development-only minimatch compatibility update; no audit exception is used.
+- Oversized components and domain modules were separated into focused panels, hooks, transport, cost/task/revision helpers and ordered stylesheets. Fixes cover stale budget editors, copied session references, historical timezone offsets, ignored cancellation, malformed uploads and unfinished input. Vendor notes from earlier categories remain visible after AI revisions.
+
+These measurements establish engineering checks, not a predicted judging score.
 
 At the October 29, 2026 quality review:
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useRef } from "react";
 import {
   ArrowUp,
   ArrowUpRight,
@@ -9,14 +9,8 @@ import {
   Sparkles,
 } from "lucide-react";
 import Link from "next/link";
-import {
-  eventBriefSchema,
-  parseBudgetMinor,
-  type EventBrief,
-} from "@/lib/planner";
 import { events, type EventKind } from "@/lib/events";
-import { useWorkspace } from "@/lib/workspace-store";
-import { readGenerationResponse } from "@/lib/generation-client";
+import { usePlanGeneration } from "@/lib/use-plan-generation";
 import BriefFields from "./brief-fields";
 import { Flower } from "./chrome";
 import { PlanResultView } from "./plan-result";
@@ -27,128 +21,33 @@ export default function Assistant({ kind }: { kind: EventKind }) {
 }
 
 function AssistantWorkspace({ kind }: { kind: EventKind }) {
-  const { state, update, storageStatus } = useWorkspace(kind);
-  const [prompt, setPrompt] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [status, setStatus] = useState("");
-  const controller = useRef<AbortController | null>(null);
+  const {
+    state,
+    storageStatus,
+    prompt,
+    setPrompt,
+    busy,
+    error,
+    status,
+    change,
+    generate,
+    cancel,
+    startFresh,
+    canStartFresh,
+  } = usePlanGeneration(kind);
   const resultRef = useRef<HTMLDivElement>(null);
   const contextRef = useRef<HTMLFormElement>(null);
   const data = events[kind];
-  useEffect(() => () => {
-    const pending = controller.current;
-    controller.current = null;
-    pending?.abort();
-  }, [kind]);
-  function change<K extends keyof EventBrief>(key: K, value: EventBrief[K]) {
-    update((current) => ({
-      ...current,
-      brief: { ...current.brief, [key]: value },
-    }));
-  }
-  async function generate(event: FormEvent) {
-    event.preventDefault();
-    // React state updates do not prevent two submits in the same event turn.
-    if (controller.current) return;
-    setError("");
-    setStatus("");
-    if (!contextRef.current?.reportValidity()) {
-      setError(
-        "Add your celebration name, location, guest estimate, and budget in the little details first.",
-      );
-      return;
-    }
-    const validated = eventBriefSchema.safeParse(state.brief);
-    if (!validated.success) {
-      setError(
-        validated.error.issues[0]?.message ??
-          "Please check your event details.",
-      );
-      return;
-    }
-    try {
-      parseBudgetMinor(state.brief.budgetAmount, state.brief.currency);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Check your budget.");
-      return;
-    }
-    const requestText =
-      prompt.trim() ||
-      `Create a thoughtful, personalised ${data.singular} plan from these details.`;
-    if (state.revisionRequests.length >= 20) {
-      setError(
-        "This plan has reached 20 revisions. Export your current plan, then change the details and create a fresh plan.",
-      );
-      return;
-    }
-    setBusy(true);
-    const abort = new AbortController();
-    controller.current = abort;
-    const startingPlan = JSON.stringify([state.brief, state.result, state.revisionRequests]);
-    const timeout = window.setTimeout(() => abort.abort(), 45000);
-    try {
-      const response = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          brief: validated.data,
-          revisionRequest: requestText,
-          priorRevisionRequests: state.revisionRequests,
-        }),
-        signal: abort.signal,
+  function revealResult() {
+    requestAnimationFrame(() => {
+      resultRef.current?.focus({ preventScroll: true });
+      resultRef.current?.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "instant"
+          : "smooth",
+        block: "start",
       });
-      const result = await readGenerationResponse(response);
-      if (controller.current !== abort) return;
-      if (abort.signal.aborted) throw abort.signal.reason;
-      let applied = false;
-      const accepted = update((current) => {
-        if (JSON.stringify([current.brief, current.result, current.revisionRequests]) !== startingPlan)
-          return current;
-        applied = true;
-        return {
-          ...current,
-          result,
-          resultSource: "ai",
-          revisionRequests: [...current.revisionRequests, requestText],
-        };
-      });
-      if (!accepted) return;
-      if (!applied) {
-        setError("Your draft changed while this plan was being created. Your newer details are safe; create a plan again with the updated brief.");
-        return;
-      }
-      setPrompt("");
-      setStatus("Your tailored plan is ready in your organizer.");
-      requestAnimationFrame(() =>
-        resultRef.current?.scrollIntoView({
-          behavior: window.matchMedia("(prefers-reduced-motion: reduce)")
-            .matches
-            ? "instant"
-            : "smooth",
-          block: "start",
-        }),
-      );
-    } catch (e) {
-      if (controller.current !== abort) return;
-      if (abort.signal.reason === "host-cancelled") {
-        setStatus("Planning cancelled. Your draft and previous plan are safe.");
-        return;
-      }
-      setError(
-        abort.signal.aborted
-          ? "The request took too long. Your draft is safe; please try again."
-          : e instanceof Error
-            ? e.message
-            : "Something went wrong. Please try again.",
-      );
-    } finally {
-      window.clearTimeout(timeout);
-      if (controller.current === abort) {
-        setBusy(false);
-        controller.current = null;
-      }
-    }
+    });
   }
   return (
     <main
@@ -172,12 +71,12 @@ function AssistantWorkspace({ kind }: { kind: EventKind }) {
       <div className="assistant-grid">
         <aside className="assistant-context">
           <div className="panel-title">
-            <h2>The little details</h2>
+            <h2 id={`${kind}-brief-heading`}>The little details</h2>
             <span>YOUR BRIEF</span>
           </div>
           <p>A little context makes for a much better plan.</p>
           <form ref={contextRef} onSubmit={(e) => e.preventDefault()}>
-            <fieldset disabled={busy}>
+            <fieldset disabled={busy} aria-labelledby={`${kind}-brief-heading`}>
               <BriefFields
                 brief={state.brief}
                 onChange={change}
@@ -237,12 +136,22 @@ function AssistantWorkspace({ kind }: { kind: EventKind }) {
               ))}
             </div>
           </div>
-          <form className="assistant-composer" onSubmit={generate}>
+          <form
+            className="assistant-composer"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void generate(
+                contextRef.current?.reportValidity() ?? false,
+                revealResult,
+              );
+            }}
+          >
             <label htmlFor="assistant-prompt" className="sr-only">
               Describe your celebration or request a change
             </label>
             <textarea
               id="assistant-prompt"
+              aria-describedby="assistant-disclosure"
               value={prompt}
               disabled={busy}
               onChange={(e) => setPrompt(e.target.value)}
@@ -275,7 +184,7 @@ function AssistantWorkspace({ kind }: { kind: EventKind }) {
               </button>
             </div>
           </form>
-          <p className="assistant-disclosure">
+          <p id="assistant-disclosure" className="assistant-disclosure">
             Creating a plan sends this brief to the planning service. Skip
             private guest details.
             <br />
@@ -288,7 +197,7 @@ function AssistantWorkspace({ kind }: { kind: EventKind }) {
                 <LoaderCircle className="loading-spin" size={16} />
                 Finding the threads that bring your day together…
               </p>
-              <button className="text-link" type="button" onClick={() => controller.current?.abort("host-cancelled")}>
+              <button className="text-link" type="button" onClick={cancel}>
                 Cancel planning
               </button>
             </div>
@@ -299,23 +208,8 @@ function AssistantWorkspace({ kind }: { kind: EventKind }) {
               <p>{error}</p>
             </div>
           )}
-          {state.revisionRequests.length >= 20 && !busy && (
-            <button
-              className="button button-outline"
-              onClick={() => {
-                update((current) => ({
-                  ...current,
-                  result: null,
-                  resultSource: null,
-                  revisionRequests: [],
-                }));
-                setPrompt("");
-                setError("");
-                setStatus(
-                  "Ready for a fresh planning round. Your event details, tasks and vendor notes are kept.",
-                );
-              }}
-            >
+          {canStartFresh && !busy && (
+            <button className="button button-outline" onClick={startFresh}>
               Start a fresh planning round
             </button>
           )}
@@ -325,7 +219,13 @@ function AssistantWorkspace({ kind }: { kind: EventKind }) {
               {status}
             </p>
           )}
-          <div ref={resultRef} className="assistant-result-anchor">
+          <div
+            ref={resultRef}
+            className="assistant-result-anchor"
+            tabIndex={-1}
+            role="region"
+            aria-label="Your planning result"
+          >
             {state.result && state.resultSource === "ai" && (
               <PlanResultView result={state.result} kind={kind} />
             )}

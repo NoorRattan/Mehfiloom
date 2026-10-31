@@ -36,14 +36,27 @@ export function Reveal({
 export function MotionProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const lenis = new Lenis({
-      autoRaf: true,
-      duration: 1.05,
-      anchors: true,
-      prevent: (node) => node.hasAttribute("data-lenis-prevent"),
-    });
-    return () => lenis.destroy();
+    const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let scrolling: Lenis | null = null;
+    const synchronize = () => {
+      scrolling?.destroy();
+      scrolling = null;
+      if (preference.matches || document.visibilityState === "hidden") return;
+      scrolling = new Lenis({
+        autoRaf: true,
+        duration: 1.05,
+        anchors: true,
+        prevent: (node) => node.hasAttribute("data-lenis-prevent"),
+      });
+    };
+    synchronize();
+    preference.addEventListener("change", synchronize);
+    document.addEventListener("visibilitychange", synchronize);
+    return () => {
+      scrolling?.destroy();
+      preference.removeEventListener("change", synchronize);
+      document.removeEventListener("visibilitychange", synchronize);
+    };
   }, []);
   return (
     <MotionConfig reducedMotion="user">
@@ -67,6 +80,21 @@ export function Magnetic({
   className?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const element = ref.current;
+    const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const reset = () => {
+      if (preference.matches && element) {
+        gsap.killTweensOf(element);
+        gsap.set(element, { x: 0, y: 0 });
+      }
+    };
+    preference.addEventListener("change", reset);
+    return () => {
+      preference.removeEventListener("change", reset);
+      if (element) gsap.killTweensOf(element);
+    };
+  }, []);
   return (
     <div
       ref={ref}
@@ -84,14 +112,19 @@ export function Magnetic({
           y: (event.clientY - bounds.top - bounds.height / 2) * 0.18,
           duration: 0.5,
           ease: "power3.out",
+          overwrite: "auto",
         });
       }}
       onPointerLeave={() =>
         gsap.to(ref.current, {
           x: 0,
           y: 0,
-          duration: 0.7,
+          duration: window.matchMedia("(prefers-reduced-motion: reduce)")
+            .matches
+            ? 0
+            : 0.7,
           ease: "elastic.out(1, 0.5)",
+          overwrite: "auto",
         })
       }
     >

@@ -56,6 +56,8 @@ export default function BriefFields({
           <input
             name="eventDate"
             type="date"
+            min="1900-01-01"
+            max="9999-12-31"
             value={brief.eventDate}
             onChange={(e) => onChange("eventDate", e.target.value)}
           />

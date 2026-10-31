@@ -15,13 +15,22 @@ export interface WorkspaceStorage {
   removeItem(key: string): void;
 }
 
-export function loadWorkspaceFromStorage(storage: Pick<WorkspaceStorage, "getItem">): Workspace | null {
-  const raw = storage.getItem(WORKSPACE_STORAGE_KEY)
-    ?? storage.getItem(LEGACY_WORKSPACE_STORAGE_KEY)
-    ?? storage.getItem(OLDER_WORKSPACE_STORAGE_KEY)
-    ?? storage.getItem(SECOND_OLDER_WORKSPACE_STORAGE_KEY)
-    ?? storage.getItem(OLDEST_WORKSPACE_STORAGE_KEY);
-  return raw === null ? null : parseWorkspaceJson(raw);
+const WORKSPACE_STORAGE_KEYS = [
+  WORKSPACE_STORAGE_KEY,
+  LEGACY_WORKSPACE_STORAGE_KEY,
+  OLDER_WORKSPACE_STORAGE_KEY,
+  SECOND_OLDER_WORKSPACE_STORAGE_KEY,
+  OLDEST_WORKSPACE_STORAGE_KEY,
+] as const;
+
+export function loadWorkspaceFromStorage(
+  storage: Pick<WorkspaceStorage, "getItem">,
+): Workspace | null {
+  for (const key of WORKSPACE_STORAGE_KEYS) {
+    const raw = storage.getItem(key);
+    if (raw !== null) return parseWorkspaceJson(raw);
+  }
+  return null;
 }
 
 export function saveWorkspaceToStorage(
@@ -31,10 +40,8 @@ export function saveWorkspaceToStorage(
   storage.setItem(WORKSPACE_STORAGE_KEY, serializeWorkspace(workspace));
 }
 
-export function clearWorkspaceStorage(storage: Pick<WorkspaceStorage, "removeItem">): void {
-  storage.removeItem(WORKSPACE_STORAGE_KEY);
-  storage.removeItem(LEGACY_WORKSPACE_STORAGE_KEY);
-  storage.removeItem(OLDER_WORKSPACE_STORAGE_KEY);
-  storage.removeItem(SECOND_OLDER_WORKSPACE_STORAGE_KEY);
-  storage.removeItem(OLDEST_WORKSPACE_STORAGE_KEY);
+export function clearWorkspaceStorage(
+  storage: Pick<WorkspaceStorage, "removeItem">,
+): void {
+  for (const key of WORKSPACE_STORAGE_KEYS) storage.removeItem(key);
 }

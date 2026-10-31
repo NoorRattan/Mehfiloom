@@ -6,14 +6,20 @@
     "dev": "next dev frontend",
     "build": "next build frontend",
     "start": "next start frontend",
-    "lint": "eslint frontend backend e2e playwright.config.ts",
-    "test": "npm run test:backend && npm run test:frontend",
+    "lint": "eslint frontend backend e2e tooling playwright.config.ts",
+    "test": "npm run test:backend && npm run test:frontend && npm run test:tooling",
     "test:backend": "node --experimental-strip-types --test backend/tests/*.test.mjs",
     "test:frontend": "vitest run",
     "typecheck": "next typegen frontend && tsc --project frontend/tsconfig.json --noEmit --incremental false && tsc --project e2e/tsconfig.json --noEmit",
-    "check": "npm test && npm run lint && npm run typecheck && npm run build",
+    "check": "npm test && npm run format:check && npm run lint && npm run typecheck && npm run build",
     "check:secrets": "node backend/scripts/check-secrets.mjs",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "test:coverage:backend": "node --experimental-strip-types --experimental-test-coverage --test-coverage-include=\"backend/lib/*.ts\" --test-coverage-lines=95 --test-coverage-branches=85 --test-coverage-functions=95 --test backend/tests/*.test.mjs",
+    "test:coverage:frontend": "vitest run --coverage",
+    "test:coverage": "npm run test:coverage:backend && npm run test:coverage:frontend && npm run test:tooling",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test:tooling": "node --test tooling/tests/*.test.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",
@@ -43,10 +49,14 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/three": "^0.186.0",
+    "@vitest/coverage-v8": "^5.0.5",
     "axe-core": "^4.14.0",
     "eslint": "^10.13.0",
     "eslint-config-next": "16.4.2",
     "jsdom": "^30.1.3",
+    "minimatch": "file:tooling/minimatch-compat",
+    "minimatch-secure": "npm:minimatch@11.0.3",
+    "prettier": "^3.9.10",
     "typescript": "^5",
     "vitest": "^5.0.5"
   },
@@ -63,6 +73,17 @@
     },
     "eslint-plugin-jsx-a11y": {
       "eslint": "$eslint"
+    },
+    "minimatch": "$minimatch",
+    "eslint": {
+      ".": "$eslint",
+      "minimatch": "11.0.3"
+    },
+    "@eslint/config-array": {
+      "minimatch": "11.0.3"
+    },
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "11.0.3"
     }
   },
   "allowScripts": {

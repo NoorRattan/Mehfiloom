@@ -19,7 +19,8 @@ const nextConfig: NextConfig = {
           { key: "X-Frame-Options", value: "DENY" },
           {
             key: "Content-Security-Policy",
-            value: "base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'",
+            value:
+              "base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'",
           },
           {
             key: "Permissions-Policy",

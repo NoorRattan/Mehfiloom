@@ -8,9 +8,12 @@ describe("displayed budgets", () => {
     [1234, "JPY", "¥1,234"],
     [1234, "KWD", "KWD 1.234"],
     [0, "EUR", "€0"],
-  ])("formats %s minor units in %s using that currency's precision", (amount, currency, expected) => {
-    expect(money(amount as number, currency as string)).toBe(expected);
-  });
+  ])(
+    "formats %s minor units in %s using that currency's precision",
+    (amount, currency, expected) => {
+      expect(money(amount as number, currency as string)).toBe(expected);
+    },
+  );
 
   it("normalizes currency spelling and retains cent precision after repeated renders", () => {
     expect(money(1234, " usd ")).toBe("$12.34");

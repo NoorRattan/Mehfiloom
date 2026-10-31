@@ -1,0 +1,313 @@
+.workspace-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.workspace-heading-actions > .text-link {
+  font-size: 10px;
+}
+.budget-editor {
+  margin-top: 20px;
+}
+.budget-edit-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+}
+.budget-edit-row > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.budget-edit-row > div > span {
+  font-size: 8px;
+  color: var(--muted);
+}
+.budget-edit-row input {
+  width: 110px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  padding: 8px 10px;
+  border-radius: 3px;
+  text-align: right;
+  font-size: 11px;
+}
+.budget-editor-balance {
+  font-size: 10px;
+  color: var(--accent);
+  margin: 18px 0;
+}
+.budget-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+.budget-editor-actions .button {
+  min-height: 40px;
+  padding: 10px 15px;
+  font-size: 10px;
+  gap: 8px;
+}
+.budget-editor-actions .text-link {
+  font-size: 9px;
+}
+@media (max-width: 760px) {
+  .workspace-heading-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .workspace-heading-actions > .text-link {
+    font-size: 10px;
+  }
+  .workspace-sidebar {
+    scroll-margin-top: 20px;
+  }
+  .field input,
+  .field select,
+  .field textarea,
+  .compact-fields .field input,
+  .compact-fields .field select,
+  .compact-fields .field textarea {
+    font-size: 16px;
+  }
+  .field > span {
+    font-size: 11px;
+  }
+  .assistant-context .field > span {
+    font-size: 11px;
+  }
+  .assistant-composer > textarea {
+    font-size: 16px;
+  }
+  .hero-inset > span {
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .budget-edit-row {
+    font-size: 11px;
+  }
+  .budget-edit-row input {
+    width: 95px;
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 760px) {
+  .hero-copy h1 em {
+    font-size: clamp(41px, 13vw, 70px);
+    white-space: normal;
+    letter-spacing: -1.8px;
+  }
+  .hero-copy .eyebrow,
+  .workspace-heading .eyebrow,
+  .assistant-welcome .eyebrow {
+    font-size: 8px;
+    letter-spacing: 1.15px;
+  }
+  .hero-description {
+    font-size: 13px;
+  }
+  .hero-footnote {
+    font-size: 9px;
+  }
+  .workspace-heading > div > p:not(.eyebrow),
+  .assistant-main .workspace-heading > div > p:not(.eyebrow) {
+    font-size: 12px;
+  }
+  .workspace-stats > div > span {
+    font-size: 7px;
+    letter-spacing: 0.45px;
+    min-height: 25px;
+  }
+  .workspace-stats strong {
+    font-size: 28px;
+    letter-spacing: -0.6px;
+  }
+  .workspace-stats small {
+    font-size: 10px;
+    letter-spacing: 0;
+  }
+  .workspace-tabs button {
+    font-size: 11px;
+  }
+  .workspace-welcome p:not(.eyebrow) {
+    font-size: 10px;
+  }
+  .workspace-welcome .eyebrow {
+    font-size: 7px;
+  }
+  .task-row > span > strong {
+    font-size: 12px;
+  }
+  .task-row > span > small {
+    font-size: 10px;
+  }
+  .assistant-context > p,
+  .assistant-welcome > p:not(.eyebrow) {
+    font-size: 12px;
+  }
+  .prompt-suggestions > button {
+    font-size: 11px;
+    min-width: 0;
+    width: min(100%, 320px);
+  }
+  .assistant-disclosure,
+  .save-note,
+  .workspace-bottom-note {
+    font-size: 9px;
+  }
+  .hero-photo .photo-caption {
+    font-size: 6px;
+    letter-spacing: 0.6px;
+  }
+  .assistant-preview-copy > p:not(.eyebrow),
+  .approach-step p,
+  .editorial-copy > p:not(.eyebrow),
+  .birthday-detail-lines p,
+  .community-purpose > div > p:not(.eyebrow),
+  .community-purpose-list p {
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 380px) {
+  .workspace-stats {
+    grid-template-columns: 1fr 1fr;
+    row-gap: 16px;
+  }
+  .workspace-stats > div:first-child {
+    grid-column: 1 / -1;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 16px;
+  }
+  .workspace-stats > div:nth-child(2) {
+    border-left: 0;
+    padding-left: 0;
+  }
+  .workspace-stats > div > span {
+    min-height: 0;
+    margin-bottom: 8px;
+  }
+  .workspace-tabs button {
+    font-size: 10px;
+  }
+}
+
+/* Planning controls remain readable at every breakpoint, including zoom. */
+.workspace-main .field > span,
+.workspace-main .assistant-context .field > span,
+.workspace-main .budget-edit-row {
+  font-size: 13px;
+}
+.workspace-main .field small,
+.workspace-main .save-note,
+.workspace-main .assistant-disclosure,
+.workspace-main .workspace-bottom-note,
+.workspace-main .small-note,
+.workspace-main .budget-row p,
+.workspace-main .task-row > span > small,
+.workspace-main .panel-description {
+  font-size: 12px;
+  line-height: 1.65;
+}
+.workspace-main .field input,
+.workspace-main .field select,
+.workspace-main .field textarea,
+.workspace-main .compact-fields .field input,
+.workspace-main .compact-fields .field select,
+.workspace-main .compact-fields .field textarea,
+.workspace-main .budget-edit-row input,
+.workspace-main .assistant-composer > textarea,
+.workspace-main .add-task input {
+  font-size: 16px;
+  min-height: 44px;
+  border-color: color-mix(in srgb, var(--ink) 55%, var(--paper));
+}
+.workspace-main .field input::placeholder,
+.workspace-main .field textarea::placeholder {
+  opacity: 1;
+}
+.workspace-main .money-field select {
+  font-size: 13px !important;
+  width: 85px;
+}
+.workspace-main .mood-chips button,
+.workspace-main .prompt-suggestions > button {
+  font-size: 12px;
+  min-height: 44px;
+  padding: 9px 12px;
+}
+.workspace-main .workspace-tabs button,
+.workspace-main .text-link,
+.workspace-main .button,
+.workspace-main .vendor-details summary,
+.workspace-main .task-row > span > strong {
+  font-size: 13px;
+  line-height: 1.5;
+}
+.workspace-main .workspace-tabs button,
+.workspace-main .text-link,
+.workspace-main .icon-button,
+.workspace-main .send-button,
+.workspace-main .success-message button,
+.workspace-main .button {
+  min-height: 44px;
+}
+.workspace-main .icon-button,
+.workspace-main .send-button,
+.workspace-main .success-message button {
+  min-width: 44px;
+}
+.workspace-main .workspace-stats > div > span,
+.workspace-main .eyebrow,
+.workspace-main .budget-table-head,
+.workspace-main .panel-title > span,
+.workspace-main .budget-row > span {
+  font-size: 11px;
+  line-height: 1.6;
+}
+.workspace-main .completion-label {
+  font-size: 11px !important;
+}
+.workspace-main .priority {
+  font-size: 11px;
+}
+.workspace-main .budget-row strong,
+.workspace-main .vendor-details li,
+.workspace-main .result-timeline p,
+.workspace-main .result-ideas p,
+.workspace-main .result-open-notes li {
+  font-size: 13px;
+  line-height: 1.65;
+}
+.workspace-main .workspace-tabs {
+  gap: clamp(12px, 2vw, 29px);
+  overflow-x: auto;
+}
+.workspace-main .workspace-tabs button {
+  flex-shrink: 0;
+}
+.workspace-main .workspace-stats strong {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 760px) {
+  .workspace-main .budget-table-head,
+  .workspace-main .budget-row {
+    grid-template-columns: minmax(0, 1fr) 34px 86px;
+    gap: 10px;
+  }
+  .workspace-main .budget-table-head {
+    font-size: 10px;
+  }
+  .workspace-main .budget-row > strong {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}

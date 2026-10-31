@@ -31,4 +31,6 @@ AI suggestions are unverified. Schema and arithmetic checks do not establish rea
 
 Both `npm audit --omit=dev` and `npm audit` are blocking CI checks. At the October 29, 2026 review both reported zero vulnerabilities. The earlier development-only advisory exception has been removed. Audit results reflect the registry advisory database at the time of the check; rerun them for later revisions. Do not use `npm audit fix --force` to downgrade Next.js tooling incompatibly.
 
+On October 31 the newly reported `minimatch` development advisory was addressed with patched upstream `11.0.3`. Legacy lint plugins consume a small local API bridge; modern consumers use the upstream package directly. The [bridge documentation](tooling/README.md) describes its limited API and removal criteria. Contract tests and real import/accessibility lint-rule tests verify the compatibility path; audit checks remain unmodified and blocking.
+
 The repository history screen detects supported Groq/GitHub/OpenAI/AWS/private-key patterns and prints locations only. It does not prove every possible secret is absent; use GitHub/provider secret scanning as well. Any accidentally committed credential must be revoked, even after removing its file.

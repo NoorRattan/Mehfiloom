@@ -1,0 +1,685 @@
+@media (min-width: 1500px) {
+  .home-hero {
+    min-height: 730px;
+    gap: 45px;
+  }
+  .hero-art {
+    height: 555px;
+  }
+  .hero-copy h1 {
+    font-size: 105px;
+  }
+  .portal-image {
+    height: 365px;
+  }
+}
+@media (max-width: 1150px) {
+  .wrap {
+    width: calc(100% - 72px);
+  }
+  .site-header,
+  .event-nav {
+    width: calc(100% - 72px);
+  }
+  .desktop-nav {
+    margin-left: 0;
+    gap: 24px;
+  }
+  .home-hero {
+    min-height: 600px;
+    padding-top: 35px;
+    gap: 25px;
+  }
+  .hero-copy h1 {
+    font-size: 7.1vw;
+    letter-spacing: -2.5px;
+  }
+  .hero-art {
+    height: 430px;
+  }
+  .hero-copy .eyebrow {
+    font-size: 7px;
+    letter-spacing: 1.2px;
+  }
+  .hero-description {
+    font-size: 11px;
+  }
+  .hero-actions {
+    gap: 15px;
+  }
+  .hero-actions .text-link {
+    font-size: 9px;
+  }
+  .hero-actions .button {
+    font-size: 10px;
+    gap: 14px;
+    padding-inline: 17px;
+  }
+  .joy-stamp {
+    width: 96px;
+    height: 96px;
+  }
+  .joy-stamp span {
+    font-size: 10px;
+  }
+  .joy-stamp strong {
+    font-size: 17px;
+  }
+  .hero-handwriting {
+    font-size: 19px;
+  }
+  .hero-squiggle {
+    width: 60px;
+  }
+  .section-space {
+    padding-block: 80px;
+  }
+  .portal-image {
+    height: 280px;
+  }
+  .portal-bottom h3 {
+    font-size: 27px;
+  }
+  .circle-arrow {
+    width: 33px;
+    height: 33px;
+  }
+  .approach-grid,
+  .assistant-preview {
+    gap: 55px;
+  }
+  .approach-intro h2 {
+    font-size: 52px;
+  }
+  .assistant-preview h2 {
+    font-size: 50px;
+  }
+  .note-prompt {
+    font-size: 26px;
+  }
+  .wedding-hero {
+    min-height: 650px;
+    gap: 48px;
+  }
+  .wedding-art {
+    height: 460px;
+  }
+  .wedding-hero-copy h1 {
+    font-size: 9.5vw;
+  }
+  .event-editorial {
+    gap: 60px;
+  }
+  .editorial-copy h2 {
+    font-size: 53px;
+  }
+  .editorial-photo {
+    height: 520px;
+  }
+  .birthday-hero-grid {
+    gap: 40px;
+  }
+  .birthday-art {
+    height: 430px;
+  }
+  .birthday-copy h1 {
+    font-size: 11vw;
+    letter-spacing: -7px;
+  }
+  .birthday-copy h1 .flower {
+    width: 52px;
+    height: 52px;
+    top: 5px;
+  }
+  .birthday-copy > p {
+    font-size: 12px;
+  }
+  .birthday-sticker {
+    width: 100px;
+    height: 100px;
+    font-size: 15px;
+  }
+  .birthday-sticker em {
+    font-size: 25px;
+  }
+  .birthday-spark {
+    right: -20px;
+    font-size: 75px;
+  }
+  .birthday-assistant {
+    gap: 55px;
+  }
+  .birthday-assistant h2 {
+    font-size: 54px;
+  }
+  .birthday-idea-poster {
+    width: 290px;
+  }
+  .community-headline {
+    gap: 35px;
+  }
+  .community-hero-aside {
+    width: 270px;
+  }
+  .community-headline h1 {
+    font-size: 10.2vw;
+  }
+  .community-purpose {
+    gap: 55px;
+  }
+  .community-purpose h2 {
+    font-size: 54px;
+  }
+  .workspace-grid {
+    grid-template-columns: 270px minmax(0, 1fr);
+    gap: 24px;
+  }
+  .workspace-heading h1 {
+    font-size: 46px;
+  }
+  .workspace-stats strong {
+    font-size: 30px;
+  }
+  .workspace-stats > div {
+    padding-right: 13px;
+    padding-left: 13px;
+  }
+  .workspace-stats small {
+    font-size: 8px;
+    margin-left: 6px;
+  }
+  .workspace-stats > div > svg {
+    display: none;
+  }
+  .workspace-panel {
+    padding: 21px;
+  }
+  .workspace-welcome {
+    padding: 22px;
+  }
+  .workspace-welcome h2 {
+    font-size: 29px;
+  }
+  .panel-title h3 {
+    font-size: 26px;
+  }
+  .workspace-tabs {
+    gap: 24px;
+  }
+  .assistant-grid {
+    grid-template-columns: 285px minmax(0, 1fr);
+    gap: 30px;
+  }
+  .assistant-main .workspace-heading h1 {
+    font-size: 41px;
+  }
+  .assistant-welcome h2 {
+    font-size: 43px;
+  }
+  .assistant-main .workspace-heading {
+    align-items: flex-start;
+  }
+  .assistant-main .workspace-heading > .text-link {
+    margin-top: 20px;
+  }
+  .theme-birthday .workspace-heading h1 {
+    font-size: 39px;
+  }
+}
+@media (max-width: 900px) {
+  .site-header {
+    gap: 20px;
+  }
+  .desktop-nav {
+    gap: 18px;
+  }
+  .desktop-nav a {
+    font-size: 10px;
+  }
+  .desktop-nav a:last-child {
+    display: none;
+  }
+  .brand > span {
+    font-size: 30px;
+  }
+  .brand > .flower {
+    width: 29px;
+    height: 29px;
+  }
+  .button-small {
+    font-size: 9px;
+    gap: 12px;
+  }
+  .home-hero {
+    min-height: 550px;
+  }
+  .hero-art {
+    height: 385px;
+  }
+  .hero-copy h1 {
+    font-size: 7.4vw;
+  }
+  .hero-actions {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .hero-footnote {
+    margin-top: 17px;
+    font-size: 8px;
+  }
+  .hero-photo {
+    width: 80%;
+    right: 0;
+  }
+  .hero-inset {
+    width: 43%;
+  }
+  .hero-handwriting {
+    right: -2%;
+    bottom: -8px;
+  }
+  .joy-stamp {
+    left: 7%;
+  }
+  .hero-baseline > span {
+    font-size: 6px;
+    letter-spacing: 1.1px;
+  }
+  .section-heading h2 {
+    font-size: 46px;
+  }
+  .event-portals {
+    gap: 17px;
+  }
+  .portal-image {
+    height: 245px;
+  }
+  .portal-bottom h3 {
+    font-size: 24px;
+  }
+  .portal-bottom > div > span {
+    font-size: 6px;
+  }
+  .portal-tag {
+    font-size: 20px;
+    left: 12px;
+    bottom: 20px;
+  }
+  .portal-wedding .portal-tag {
+    font-size: 17px;
+  }
+  .portal-birthday .portal-tag {
+    font-size: 16px;
+  }
+  .birthday-flower {
+    width: 55px;
+    height: 55px;
+  }
+  .community-seal {
+    width: 72px;
+    height: 72px;
+    font-size: 10px;
+    left: 12px;
+  }
+  .portal-number {
+    font-size: 6px;
+  }
+  .approach-grid {
+    gap: 35px;
+  }
+  .approach-intro h2 {
+    font-size: 47px;
+  }
+  .approach-step {
+    gap: 10px;
+    grid-template-columns: 22px 1fr 15px;
+  }
+  .approach-step h3 {
+    font-size: 28px;
+  }
+  .approach-step p {
+    font-size: 10px;
+  }
+  .sculpture-wrap {
+    width: 250px;
+  }
+  .assistant-preview {
+    gap: 35px;
+  }
+  .assistant-preview h2 {
+    font-size: 45px;
+  }
+  .assistant-preview .eyebrow {
+    font-size: 7px;
+    letter-spacing: 1px;
+  }
+  .planning-note {
+    padding: 24px 19px 18px;
+  }
+  .note-prompt {
+    font-size: 24px;
+  }
+  .note-header {
+    gap: 7px;
+  }
+  .note-header > span {
+    font-size: 6px;
+    letter-spacing: 1px;
+  }
+  .footer-top {
+    gap: 30px;
+  }
+  .footer-top > p {
+    font-size: 21px;
+  }
+  .footer-cta {
+    font-size: 9px;
+    gap: 12px;
+  }
+  .site-footer {
+    padding-inline: 36px;
+  }
+  .closing-section h2 {
+    font-size: 60px;
+  }
+  .event-nav-note {
+    display: none;
+  }
+  .event-nav {
+    min-height: 55px;
+  }
+  .event-nav > div {
+    gap: 20px;
+  }
+  .event-nav > div a {
+    font-size: 9px;
+    padding-block: 18px;
+  }
+  .wedding-hero {
+    gap: 40px;
+    min-height: 600px;
+  }
+  .wedding-art {
+    height: 400px;
+  }
+  .wedding-hero-copy .eyebrow {
+    font-size: 6px;
+  }
+  .wedding-hero-copy > p:not(.eyebrow) {
+    font-size: 10px;
+  }
+  .wedding-hero-copy h1 {
+    font-size: 10vw;
+  }
+  .wedding-art-seal {
+    width: 100px;
+    height: 100px;
+    left: -30px;
+  }
+  .wedding-handwriting {
+    font-size: 16px;
+  }
+  .wedding-smallnote {
+    font-size: 13px;
+  }
+  .wedding-ribbon > span {
+    font-size: 7px;
+    letter-spacing: 1px;
+  }
+  .wedding-ribbon {
+    gap: 15px;
+    padding-inline: 35px;
+  }
+  .wedding-ribbon .flower {
+    width: 19px;
+  }
+  .event-editorial {
+    gap: 40px;
+  }
+  .editorial-photo {
+    height: 490px;
+  }
+  .editorial-copy h2 {
+    font-size: 47px;
+  }
+  .editorial-copy > p:not(.eyebrow) {
+    font-size: 10px;
+  }
+  .editorial-copy .eyebrow {
+    font-size: 6px;
+  }
+  .editorial-lines strong {
+    font-size: 10px;
+  }
+  .editorial-lines p {
+    font-size: 9px;
+  }
+  .editorial-lines > div {
+    gap: 14px;
+    padding-block: 14px;
+  }
+  .event-assistant-band {
+    padding: 45px;
+  }
+  .event-assistant-band h2 {
+    font-size: 44px;
+  }
+  .band-flower {
+    width: 140px;
+    height: 140px;
+  }
+  .birthday-art {
+    height: 380px;
+  }
+  .birthday-copy h1 {
+    font-size: 11.5vw;
+    letter-spacing: -5px;
+  }
+  .birthday-copy h1 .flower {
+    width: 42px;
+    height: 42px;
+    right: -8px;
+  }
+  .birthday-copy > p {
+    font-size: 11px;
+  }
+  .birthday-copy > .magnetic > .button {
+    padding-inline: 14px;
+    font-size: 9px;
+    gap: 10px;
+  }
+  .birthday-sticker {
+    width: 84px;
+    height: 84px;
+    font-size: 12px;
+  }
+  .birthday-sticker em {
+    font-size: 21px;
+  }
+  .birthday-photo-note {
+    font-size: 22px;
+  }
+  .birthday-manifesto h2 {
+    font-size: 56px;
+  }
+  .birthday-detail-lines {
+    gap: 25px;
+  }
+  .birthday-detail-lines h3 {
+    font-size: 17px;
+  }
+  .birthday-detail-lines p {
+    font-size: 10px;
+  }
+  .birthday-assistant h2 {
+    font-size: 45px;
+  }
+  .birthday-assistant {
+    gap: 35px;
+  }
+  .birthday-idea-poster {
+    width: 250px;
+  }
+  .birthday-idea-poster p {
+    font-size: 50px;
+  }
+  .community-headline h1 {
+    font-size: 10.5vw;
+    letter-spacing: -3px;
+  }
+  .community-hero-aside {
+    width: 230px;
+  }
+  .community-hero-aside > p {
+    font-size: 10px;
+  }
+  .community-hero-aside .button {
+    font-size: 9px;
+    gap: 10px;
+    min-height: 45px;
+    padding-inline: 16px;
+  }
+  .community-wide-photo {
+    height: 320px;
+  }
+  .community-purpose {
+    gap: 40px;
+  }
+  .community-purpose h2 {
+    font-size: 48px;
+  }
+  .community-purpose > div > p:not(.eyebrow) {
+    font-size: 11px;
+  }
+  .community-purpose-list h3 {
+    font-size: 27px;
+  }
+  .community-purpose-list p {
+    font-size: 10px;
+  }
+  .community-invitation h2 {
+    font-size: 54px;
+  }
+  .community-invitation-flower {
+    width: 175px;
+    height: 175px;
+  }
+  .workspace-grid {
+    grid-template-columns: 235px minmax(0, 1fr);
+    gap: 21px;
+  }
+  .workspace-heading h1 {
+    font-size: 41px;
+  }
+  .sidebar-details {
+    padding-inline: 16px;
+  }
+  .workspace-stats strong {
+    font-size: 26px;
+  }
+  .workspace-stats small {
+    display: block;
+    margin: 3px 0 0;
+    font-size: 8px;
+  }
+  .workspace-stats > div > span {
+    font-size: 5px;
+    letter-spacing: 0.8px;
+  }
+  .workspace-tabs {
+    gap: 16px;
+  }
+  .workspace-tabs button {
+    font-size: 8px;
+  }
+  .workspace-welcome h2 {
+    font-size: 26px;
+  }
+  .workspace-welcome > .flower {
+    width: 35px;
+    height: 35px;
+  }
+  .panel-title h3 {
+    font-size: 24px;
+  }
+  .panel-title .eyebrow {
+    font-size: 6px;
+  }
+  .completion-label {
+    font-size: 6px !important;
+  }
+  .task-row > span > strong {
+    font-size: 10px;
+  }
+  .workspace-panel {
+    padding: 18px;
+  }
+  .workspace-ai-note {
+    gap: 12px;
+  }
+  .workspace-ai-note h3 {
+    font-size: 25px;
+  }
+  .workspace-ai-note > .flower {
+    display: none;
+  }
+  .ai-note-icon {
+    width: 38px;
+    height: 38px;
+  }
+  .workspace-ai-note .eyebrow {
+    font-size: 6px;
+  }
+  .budget-table-head,
+  .budget-row {
+    grid-template-columns: 1fr 30px 75px;
+    gap: 10px;
+  }
+  .budget-row {
+    font-size: 10px;
+  }
+  .budget-row p {
+    font-size: 8px;
+  }
+  .budget-row > span {
+    font-size: 8px;
+  }
+  .budget-table-head {
+    font-size: 5px;
+  }
+  .assistant-grid {
+    grid-template-columns: 250px minmax(0, 1fr);
+    gap: 25px;
+  }
+  .assistant-context {
+    padding: 18px;
+  }
+  .assistant-welcome h2 {
+    font-size: 38px;
+  }
+  .assistant-welcome {
+    padding-top: 17px;
+  }
+  .assistant-main .workspace-heading h1 {
+    font-size: 36px;
+  }
+  .assistant-main .workspace-heading {
+    gap: 20px;
+  }
+  .assistant-main .workspace-heading > .text-link {
+    font-size: 7px;
+    gap: 7px;
+  }
+  .assistant-main .workspace-heading > div > p:not(.eyebrow) {
+    max-width: 430px;
+    font-size: 10px;
+  }
+  .prompt-suggestions > button {
+    min-width: 250px;
+    font-size: 8px;
+  }
+  .assistant-context .panel-title h2 {
+    font-size: 23px;
+  }
+}

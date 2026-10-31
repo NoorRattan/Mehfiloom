@@ -44,7 +44,9 @@ function timeParts(value: string): { hour: number; minute: number } | null {
 }
 
 export function isValidIanaTimeZone(value: string): boolean {
-  if (!value.trim()) return false;
+  // Intl also accepts numeric UTC offsets; the planning contract requires a
+  // named zone so seasonal clock changes are handled for the event date.
+  if (!value.trim() || /^[+-]/.test(value)) return false;
   try {
     formatterFor(value);
     return true;
@@ -122,19 +124,11 @@ export function resolveZonedDateTime(
 ): ZonedDateTimeResolution {
   if (!date && !time)
     return { status: "missing", candidates: [], instant: null };
-  if (
-    !dateParts(date) ||
-    !timeParts(time) ||
-    !timeZone ||
-    !isValidIanaTimeZone(timeZone)
-  ) {
-    return { status: "invalid", candidates: [], instant: null };
-  }
-
   const civilDate = dateParts(date);
   const civilTime = timeParts(time);
-  if (!civilDate || !civilTime)
+  if (!civilDate || !civilTime || !timeZone || !isValidIanaTimeZone(timeZone)) {
     return { status: "invalid", candidates: [], instant: null };
+  }
   const target: CivilParts = { ...civilDate, ...civilTime, second: 0 };
   const targetEpoch = Date.UTC(
     target.year,
@@ -162,11 +156,13 @@ export function resolveZonedDateTime(
       local.minute,
       local.second,
     );
-    offsets.add(Math.round((localAsUtc - sample.getTime()) / 60_000));
+    // Historical named-zone offsets can include seconds. Rounding them to
+    // minutes incorrectly turns an ordinary supported date into a DST gap.
+    offsets.add(localAsUtc - sample.getTime());
   }
 
   const candidates = [...offsets]
-    .map((offsetMinutes) => new Date(targetEpoch - offsetMinutes * 60_000))
+    .map((offsetMilliseconds) => new Date(targetEpoch - offsetMilliseconds))
     .filter((candidate) => sameWallTime(partsAt(candidate, timeZone), target))
     .sort((left, right) => left.getTime() - right.getTime())
     .map((candidate) => candidate.toISOString());

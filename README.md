@@ -2,7 +2,7 @@
 
 **Make room for your kind of gathering.**
 
-[Live application](https://mehfiloom.vercel.app) · [Submission guide](docs/SUBMISSION.md) · [Design research](frontend/DESIGN.md) · [Security](SECURITY.md)
+[Live application](https://mehfiloom.vercel.app) · [Submission guide](docs/SUBMISSION.md) · [Architecture](docs/ARCHITECTURE.md) · [Design research](frontend/DESIGN.md) · [Security](SECURITY.md)
 
 A GenAI planning assistant for **weddings, birthdays and community events**. Turn an event brief into a personal planning draft with an exact budget allocation, timeline, vendor questions and ideas. Edit practical details in the organizer, then refine the plan with its dedicated assistant.
 
@@ -78,7 +78,9 @@ Next.js prerenders the ten public experience pages. The API is server-side; comp
 ## Verification
 
 ```sh
-npm test                       # 104 backend tests + 52 frontend tests
+npm test                       # 117 backend + 81 frontend + 5 tooling tests
+npm run test:coverage           # Measured backend and frontend coverage gates
+npm run format:check           # Consistent source formatting
 npm run lint                   # Next.js, React, TypeScript and accessibility rules
 npm run typecheck              # Generate route types and strict TypeScript checks
 npm run build                  # Optimized Next.js production build
@@ -89,13 +91,15 @@ npx playwright install chromium firefox
 npm run test:browser            # Run after build; production app on port 3100
 ```
 
-`npm run check` runs tests, lint, types and build together. [GitHub Actions](.github/workflows/ci.yml) repeats these gates, runs production browser tests and blocks on both dependency audits using Node 24, read-only permissions and pinned action revisions. [Dependabot](.github/dependabot.yml) checks dependency and action updates weekly.
+`npm run check` runs tests, formatting, lint, types and build together. [GitHub Actions](.github/workflows/ci.yml) enforces backend and frontend coverage thresholds, repeats the other gates, runs production browser tests and blocks on both dependency audits using Node 24, read-only permissions and pinned action revisions. [Dependabot](.github/dependabot.yml) checks dependency and action updates weekly. See [the architecture guide](docs/ARCHITECTURE.md) for module boundaries and planning invariants.
 
 Frontend tests exercise all three organizers and assistants, independent persistence, damaged/denied storage, exact budget edits, provider errors, cancellation, revision context and preservation of newer host work. Browser tests cover ten routes, keyboard navigation, mobile layout, actual downloads, saved allocation edits and complete generation/error/reload workflows. Chromium desktop, Firefox desktop and Pixel 7 emulation are configured. Axe checks include color contrast in real browsers; jsdom checks cover semantics. Provider responses are mocked and the test server clears the provider key; no paid model is called. Traces, screenshots and HTML reports stay in ignored local test folders. Automated checks do not certify full WCAG conformance or a Lighthouse score.
 
 To run only Chromium desktop and mobile locally, use `npm run test:browser -- --project=chromium --project=mobile`. Firefox also needs its platform runtime dependencies; CI installs those on Linux before running all projects.
 
 Both production and full dependency audits reported zero vulnerabilities at the October 29, 2026 review. The earlier development-advisory exception has been removed; any newly reported vulnerability fails CI. ESLint 10 is supported by the bundled Next.js 16.4.2 guidance; explicit peer overrides bridge three plugins whose published ranges still stop at ESLint 9. `unrs-resolver@1.12.2` is the sole pinned, reviewed dependency install-script approval.
+
+The October 31 dependency review replaces vulnerable lint-tool matching dependencies with patched upstream `minimatch@11.0.3`. A small [development-only compatibility bridge](tooling/README.md) preserves the older plugins' callable API, with contract and actual lint-rule tests. Modern consumers use the patched package directly. No audit advisory is exempted.
 
 ## Deploy on Vercel
 

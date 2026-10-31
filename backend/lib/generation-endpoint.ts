@@ -7,182 +7,29 @@ import {
   type PlannerProposal,
 } from "./planner.ts";
 
-const MAX_BODY_BYTES = 16 * 1024;
-const WINDOW_MS = 20 * 60 * 1000;
-const MAX_CALLS_PER_WINDOW = 4;
-const MAX_TRACKED_CLIENTS = 2000;
+import {
+  GENERATION_WINDOW_MS,
+  type GenerationLimiter,
+} from "./generation-admission.ts";
+import {
+  RequestProblem,
+  readJsonBody,
+  jsonResponse,
+  providerFailure,
+} from "./generation-http.ts";
+export {
+  createInMemoryGenerationLimiter,
+  type GenerationLimiter,
+} from "./generation-admission.ts";
+
 const BODY_TIMEOUT_MS = 5_000;
-
-class RequestProblem extends Error {
-  readonly status: number;
-
-  constructor(message: string, status: number) {
-    super(message);
-    this.status = status;
-  }
-}
-
-export type GenerationLimiter = (request: Request) => boolean;
-
-export function createInMemoryGenerationLimiter(
-  now: () => number = Date.now,
-): GenerationLimiter {
-  const callsByClient = new Map<string, { count: number; resetAt: number }>();
-
-  return function takeGenerationSlot(request: Request): boolean {
-    // These headers are safe to use only when the hosting proxy overwrites them.
-    // This per-process limit is a backstop for local/single-instance runs, not a deployment quota.
-    const forwarded = request.headers
-      .get("x-forwarded-for")
-      ?.split(",")[0]
-      ?.trim();
-    const clientKey = (
-      forwarded ||
-      request.headers.get("x-real-ip") ||
-      "local"
-    ).slice(0, 64);
-    const currentTime = now();
-    const current = callsByClient.get(clientKey);
-
-    if (callsByClient.size >= MAX_TRACKED_CLIENTS && !current) {
-      for (const [key, entry] of callsByClient) {
-        if (entry.resetAt <= currentTime) callsByClient.delete(key);
-      }
-      if (callsByClient.size >= MAX_TRACKED_CLIENTS) return false;
-    }
-
-    if (!current || current.resetAt <= currentTime) {
-      callsByClient.set(clientKey, {
-        count: 1,
-        resetAt: currentTime + WINDOW_MS,
-      });
-      return true;
-    }
-    if (current.count >= MAX_CALLS_PER_WINDOW) return false;
-    current.count += 1;
-    return true;
-  };
-}
-
-async function readJsonBody(request: Request, timeoutMs: number): Promise<unknown> {
-  const declaredLength = Number(request.headers.get("content-length"));
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
-    throw new RequestProblem(
-      "The event brief is too large. Shorten the notes and try again.",
-      413,
-    );
-  }
-  if (!request.body)
-    throw new RequestProblem(
-      "Add an event brief before generating a plan.",
-      400,
-    );
-
-  const reader = request.body.getReader();
-  const decoder = new TextDecoder("utf-8", { fatal: true });
-  let text = "";
-  let byteCount = 0;
-  let finished = false;
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  let onAbort: () => void = () => {};
-  const interrupted = new Promise<never>((_, reject) => {
-    onAbort = () => reject(new RequestProblem("The event brief upload was cancelled. Please try again.", 408));
-    if (request.signal.aborted) onAbort();
-    else request.signal.addEventListener("abort", onAbort, { once: true });
-    timeout = setTimeout(() => reject(new RequestProblem("The event brief took too long to upload. Please try again.", 408)), timeoutMs);
-  });
-  try {
-    while (true) {
-      const { done, value } = await Promise.race([reader.read(), interrupted]);
-      if (done) break;
-      byteCount += value.byteLength;
-      if (byteCount > MAX_BODY_BYTES) {
-        throw new RequestProblem(
-          "The event brief is too large. Shorten the notes and try again.",
-          413,
-        );
-      }
-      text += decoder.decode(value, { stream: true });
-    }
-    text += decoder.decode();
-    finished = true;
-    return JSON.parse(text) as unknown;
-  } catch (error) {
-    if (error instanceof RequestProblem) throw error;
-    throw new RequestProblem(
-      "The event brief could not be read. Please try again.",
-      400,
-    );
-  } finally {
-    clearTimeout(timeout);
-    request.signal.removeEventListener("abort", onAbort);
-    // Cancellation must not wait on an uncooperative stream source's cancel callback.
-    if (!finished) void reader.cancel().catch(() => {});
-    reader.releaseLock();
-  }
-}
-
-function jsonResponse(
-  body: unknown,
-  status = 200,
-  headers: HeadersInit = {},
-): Response {
-  return Response.json(body, {
-    status,
-    headers: {
-      "Cache-Control": "no-store",
-      ...Object.fromEntries(new Headers(headers)),
-    },
-  });
-}
-
-function providerFailure(error: unknown): {
-  status: number;
-  code: string;
-  message: string;
-} {
-  const status =
-    typeof error === "object" && error !== null && "status" in error
-      ? error.status
-      : undefined;
-  const errorName =
-    error instanceof Error
-      ? error.name === "Error"
-        ? error.constructor.name
-        : error.name
-      : "";
-
-  if (status === 429 || errorName === "RateLimitError") {
-    return {
-      status: 503,
-      code: "PROVIDER_RATE_LIMITED",
-      message:
-        "The planning service is temporarily busy. Please try again later.",
-    };
-  }
-  if (
-    errorName === "APIConnectionTimeoutError" ||
-    errorName === "TimeoutError" ||
-    errorName === "AbortError"
-  ) {
-    return {
-      status: 504,
-      code: "PROVIDER_TIMEOUT",
-      message:
-        "The planning service took too long to respond. Your brief is unchanged; please try again.",
-    };
-  }
-  return {
-    status: 502,
-    code: "PROVIDER_FAILED",
-    message:
-      "The planning service could not create a draft. Your brief is unchanged; please try again.",
-  };
-}
 
 export function createGenerationEndpoint(options: {
   hasProviderKey: () => boolean;
-  generate: (input: unknown, options?: { signal?: AbortSignal }) => Promise<PlannerProposal>;
+  generate: (
+    input: unknown,
+    options?: { signal?: AbortSignal },
+  ) => Promise<PlannerProposal>;
   allowRequest: GenerationLimiter;
   bodyTimeoutMs?: number;
 }) {
@@ -210,10 +57,13 @@ export function createGenerationEndpoint(options: {
             },
           },
           429,
-          { "Retry-After": String(WINDOW_MS / 1000) },
+          { "Retry-After": String(GENERATION_WINDOW_MS / 1000) },
         );
       }
-      const input = await readJsonBody(request, options.bodyTimeoutMs ?? BODY_TIMEOUT_MS);
+      const input = await readJsonBody(
+        request,
+        options.bodyTimeoutMs ?? BODY_TIMEOUT_MS,
+      );
       const parsed = generationRequestSchema.safeParse(input);
       if (!parsed.success) {
         return jsonResponse(
@@ -258,12 +108,21 @@ export function createGenerationEndpoint(options: {
       const providerInput =
         "revisionRequest" in parsed.data ? parsed.data : brief;
       if (request.signal.aborted) {
-        throw new RequestProblem("The planning request was cancelled. Please try again.", 408);
+        throw new RequestProblem(
+          "The planning request was cancelled. Please try again.",
+          408,
+        );
       }
-      const proposal = validateProposalForBrief(
-        await options.generate(providerInput, { signal: request.signal }),
-        brief,
-      );
+      const generated = await options.generate(providerInput, {
+        signal: request.signal,
+      });
+      if (request.signal.aborted) {
+        throw new RequestProblem(
+          "The planning request was cancelled. Please try again.",
+          408,
+        );
+      }
+      const proposal = validateProposalForBrief(generated, brief);
       const result = buildPlanResult(proposal, brief.currency, totalMinor);
       return jsonResponse({ result });
     } catch (error) {
